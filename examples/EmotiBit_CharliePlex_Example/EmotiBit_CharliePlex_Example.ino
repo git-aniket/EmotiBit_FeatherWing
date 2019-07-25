@@ -35,6 +35,14 @@ uint8_t heartHor[7][15] = { {0, 0, 0,  0,  0,  1,  1,  0,  1,  1,  0,  0,  0,  0
 			  {0, 0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0,  0},
 			  {0, 0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0} };
 
+unsigned long starttime = 0;
+float * ppgData;
+uint32_t charlieTS;
+size_t charlieLen;
+BufferFloat charlieBuf(8);
+uint8_t win = 5;
+float lastM = 0;
+
 void drawHeart(bool isVert = true, double brightness = 15) {
 	uint8_t * heart = nullptr;
 	if (isVert == true) {
@@ -162,6 +170,7 @@ uint16_t loopCount = 0;
 #define EDA_SAMPLING_DIV 1
 #define TEMPERATURE_SAMPLING_DIV 2
 #define BATTERY_SAMPLING_DIV 60
+#define CHARLIE_SAMPLING_DIV 2
 //#define N_DATA_TYPES 17
 
 bool errorStatus = false;
@@ -289,7 +298,6 @@ void setup() {
 		}
 	}
 #endif
-	//drawHeart(); //works here
 #ifdef SEND_UDP
 	// attempt to connect to WiFi network:
 	configPos = configSize-1;
@@ -449,15 +457,10 @@ void setup() {
 	sendTimerStart = millis();
 	requestTimestampTimerStart = millis();
 
-	//drawHeart(false); //works here
 	//Serial.println("Free Ram :" + String(FreeRam(), DEC) + " bytes");
 	Serial.println("Setup complete");
 	Serial.println("Starting interrupts");
 	startTimer(BASE_SAMPLING_FREQ);
-	Wire.setClock(BASE_SAMPLING_FREQ);
-	//Wire.setClock(I2C_SPEED_STANDARD);
-	drawHeart();  //doesn't work fully here
-	Wire.setClock(I2C_SPEED_STANDARD);
 	// ToDo: utilize separate strings for SD card writable messages vs transmit acks
 
 	sendResetPacket = true;
@@ -751,24 +754,12 @@ bool performTimestampSyncing() {
 		parseIncomingMessages();
 	}
 }
-uint32_t charlieCount = 5000;
-bool orient = true;
-unsigned long starttime = millis();
+
 void loop() {
 #ifdef DEBUG_GET_DATA
 	Serial.println("loop()");
 #endif // DEBUG
-#if 1
-	if(millis()-starttime>charlieCount){
-		Serial.print("Charlie Start: ");
-		starttime = millis();
-		Serial.println(starttime);
-		orient != orient;
-		drawHeart(orient);
-		Serial.print("Charlie Duration: ");
-		Serial.println(millis() - starttime);
-	}
-#endif
+
 	updateWiFi();
 
 	parseIncomingMessages();
@@ -858,6 +849,7 @@ void loop() {
 		stopSDWrite = false;
 	}
 
+
 	//if (true && sdWrite) {
 	//	config.ssid = "garbage";
 	//	rebootWiFi(); // debugging wifi issue
@@ -940,6 +932,51 @@ void readSensors() {
 		batteryCounter = 0;
 	}
 	batteryCounter++;
+	static uint16_t charlieCounter;
+	if (charlieCounter > CHARLIE_SAMPLING_DIV) {
+		charlieLen = emotibit.getData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
+		if (charlieLen > 0) {
+			/*Serial.print("Charlie Start: ");
+			starttime = millis();
+			Serial.println(starttime);*/
+
+			for (uint16_t i = 0; i < charlieLen; i++) {
+				charlieBuf.push_back(ppgData[i]);
+			}
+			if (charlieBuf.size() >= win) {
+				float sum = 0;
+				for (uint16_t i = 0; i < win; i++) {
+					sum += charlieBuf.data[i];
+				}
+				sum /= win;
+
+				if (charlieBuf.size() > win) {
+					uint16_t s = charlieBuf.size() - win;
+					float* old = new float[s];
+					for (uint16_t i = win; i < charlieBuf.size(); i++) {
+						old[i-win] = charlieBuf.data[i];
+					}
+					charlieBuf.clear();
+					for (uint16_t i = 0; i < s; i++) {
+						charlieBuf.push_back(old[i]);
+					}
+					delete[] old;
+				}
+				else {
+					charlieBuf.clear();
+				}
+				drawHeart(true, (sum-lastM)/5);
+				Serial.println((sum-lastM)/5);
+				lastM = sum;
+				
+				}
+			/*Serial.print("Charlie Duration: ");
+			Serial.println(millis() - starttime);*/
+			charlieCounter = 0;
+		}
+	}
+	charlieCounter++;
+	
 }
 
 void setTimerFrequency(int frequencyHz) {
@@ -1290,7 +1327,7 @@ void updateWiFi() {
 		wifiReady = false;
 		socketReady = false;
 	}
-#if 1
+#if 0
 	//Serial.println("<<<<<<< updateWiFi >>>>>>>");
 	Serial.println("------- WiFi Status -------");
 	Serial.println(millis());
