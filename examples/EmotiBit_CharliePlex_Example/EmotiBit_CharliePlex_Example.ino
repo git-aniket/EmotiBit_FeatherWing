@@ -932,8 +932,10 @@ void readSensors() {
 		batteryCounter = 0;
 	}
 	batteryCounter++;
+
 	static uint16_t charlieCounter;
 	if (charlieCounter > CHARLIE_SAMPLING_DIV) {
+#if 1
 		charlieLen = emotibit.getData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
 		if (charlieLen > 0) {
 			/*Serial.print("Charlie Start: ");
@@ -968,12 +970,14 @@ void readSensors() {
 				drawHeart(true, (sum-lastM)/5);
 				Serial.println((sum-lastM)/5);
 				lastM = sum;
-				
 				}
 			/*Serial.print("Charlie Duration: ");
 			Serial.println(millis() - starttime);*/
 			charlieCounter = 0;
 		}
+#endif
+		//drawHeart(true, 15);
+		//charlieCounter = 0;
 	}
 	charlieCounter++;
 	
