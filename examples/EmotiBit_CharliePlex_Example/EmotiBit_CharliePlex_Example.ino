@@ -16,6 +16,7 @@ bool sendConsole = false;
 #include <ArduinoJson.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_IS31FL3731.h>
+#include <Filters.h>
 
 Adafruit_IS31FL3731_Wing ledmatrix = Adafruit_IS31FL3731_Wing();
 SdFat SD;
@@ -40,10 +41,13 @@ float * ppgData;
 uint32_t charlieTS;
 size_t charlieLen;
 BufferFloat charlieBuf(8);
-uint8_t win = 5;
-float lastM = 0;
+uint8_t win = 1;
+const float lp_freq = 25;
+const float hp_freq =0.5;
+FilterOnePole lowpassFilter( LOWPASS, lp_freq );   
+FilterOnePole highpassFilter( HIGHPASS, hp_freq );
 
-void drawHeart(bool isVert = true, double brightness = 15) {
+void drawHeart(bool isVert = true, uint8_t brightness = 15) {
 	uint8_t * heart = nullptr;
 	if (isVert == true) {
 		heart = &heartVert[0][0];
@@ -170,7 +174,8 @@ uint16_t loopCount = 0;
 #define EDA_SAMPLING_DIV 1
 #define TEMPERATURE_SAMPLING_DIV 2
 #define BATTERY_SAMPLING_DIV 60
-#define CHARLIE_SAMPLING_DIV 2
+#define CHARLIE_SAMPLING_DIV 1
+
 //#define N_DATA_TYPES 17
 
 bool errorStatus = false;
@@ -933,25 +938,28 @@ void readSensors() {
 	}
 	batteryCounter++;
 
+#if 1
 	static uint16_t charlieCounter;
 	if (charlieCounter > CHARLIE_SAMPLING_DIV) {
-#if 1
 		charlieLen = emotibit.getData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
+    
 		if (charlieLen > 0) {
-			/*Serial.print("Charlie Start: ");
+			//Serial.print("Charlie Start: ");
 			starttime = millis();
-			Serial.println(starttime);*/
+			//Serial.println(starttime);
 
 			for (uint16_t i = 0; i < charlieLen; i++) {
 				charlieBuf.push_back(ppgData[i]);
 			}
 			if (charlieBuf.size() >= win) {
+        //Perform downsampling if neccessary by a factor of win
 				float sum = 0;
 				for (uint16_t i = 0; i < win; i++) {
 					sum += charlieBuf.data[i];
 				}
 				sum /= win;
 
+        //Reorganize buffer
 				if (charlieBuf.size() > win) {
 					uint16_t s = charlieBuf.size() - win;
 					float* old = new float[s];
@@ -967,21 +975,24 @@ void readSensors() {
 				else {
 					charlieBuf.clear();
 				}
-				drawHeart(true, (sum-lastM)/5);
-				Serial.println((sum-lastM)/5);
-				lastM = sum;
+          //Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
+          sum = highpassFilter.input(sum);
+          if(sum <0){sum = 0;}
+          sum = lowpassFilter.input(sum);
+          sum /= 100;
+          if(sum <6){sum = 0;}
+          drawHeart(true, sum);
+          Serial.println(sum);
 				}
-			/*Serial.print("Charlie Duration: ");
-			Serial.println(millis() - starttime);*/
+			//Serial.print("Charlie Duration: ");
+			//Serial.println(millis() - starttime);  //Less than 1 ms
 			charlieCounter = 0;
 		}
-#endif
-		//drawHeart(true, 15);
-		//charlieCounter = 0;
 	}
 	charlieCounter++;
-	
+#endif
 }
+
 
 void setTimerFrequency(int frequencyHz) {
 	int compareValue = (CPU_HZ / (TIMER_PRESCALER_DIV * frequencyHz)) - 1;
