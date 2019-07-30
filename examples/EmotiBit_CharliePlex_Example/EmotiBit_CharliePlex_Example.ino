@@ -40,12 +40,10 @@ unsigned long starttime = 0;
 float * ppgData;
 uint32_t charlieTS;
 size_t charlieLen;
-BufferFloat charlieBuf(8);
-uint8_t win = 1;
-const float lp_freq = 25;
-const float hp_freq =0.5;
-FilterOnePole lowpassFilter( LOWPASS, lp_freq );   
-FilterOnePole highpassFilter( HIGHPASS, hp_freq );
+const float lp_freq = 12;
+const float hp_freq = 0.5;
+FilterOnePole lowpassFilter(LOWPASS, lp_freq, 0.0, 25);
+FilterOnePole highpassFilter(HIGHPASS, hp_freq, 0.0, 25);
 
 void drawHeart(bool isVert = true, uint8_t brightness = 15) {
 	uint8_t * heart = nullptr;
@@ -73,8 +71,6 @@ uint32_t momentLost;
 unsigned short int attempts = 0;
 
 
-
-
 #ifdef SEND_TCP
 #include <WiFi101.h> 
 //#include "arduino_secrets.h" 
@@ -83,7 +79,7 @@ unsigned short int attempts = 0;
 int keyIndex = 0;            // your network key Index number (needed only for WEP)
 int wifiStatus = WL_IDLE_STATUS;
 WiFiClient client;
-IPAddress server(192,168,0,106);
+IPAddress server(192, 168, 0, 106);
 int portNum = 11999;
 uint32_t refreshConnection = 100;
 uint32_t refreshCount = 0;
@@ -203,7 +199,7 @@ struct AcquireData {
 
 
 
-String typeTags[(uint8_t) EmotiBit::DataType::length];
+String typeTags[(uint8_t)EmotiBit::DataType::length];
 uint8_t printLen[(uint8_t)EmotiBit::DataType::length];
 bool sendData[(uint8_t)EmotiBit::DataType::length];
 
@@ -278,7 +274,7 @@ void setup() {
 		Serial.println("Create a file 'config.txt' with the following JSON:");
 		Serial.println("{\"WifiCredentials\": [{\"ssid\":\"SSSS\",\"password\" : \"PPPP\"}]}");
 		while (true) {
-      hibernate();
+			hibernate();
 		}
 	}
 
@@ -292,7 +288,7 @@ void setup() {
 	WiFi.setPins(8, 7, 4, 2);
 	//WiFi.noLowPowerMode();
 	WiFi.lowPowerMode();
-  
+
 	//WiFi.maxLowPowerMode();
 	// check for the presence of the shield:
 	if (WiFi.status() == WL_NO_SHIELD) {
@@ -305,7 +301,7 @@ void setup() {
 #endif
 #ifdef SEND_UDP
 	// attempt to connect to WiFi network:
-	configPos = configSize-1;
+	configPos = configSize - 1;
 	while (wifiStatus != WL_CONNECTED) {
 		if (millis() - setupTimerStart > SETUP_TIMEOUT) {
 			Serial.println("*********** Setup Timeout **************");
@@ -318,18 +314,18 @@ void setup() {
 		else {
 			configPos++;
 		}
-		
+
 		// Connect to WPA/WPA2 network. Change this line if using open or WEP network:
 		Serial.print("Attempting to connect to SSID: ");
 		Serial.println(configList[configPos].ssid);
 		wifiStatus = WiFi.begin(configList[configPos].ssid, configList[configPos].password);
 		// wait for connection:
 		Serial.println(wifiStatus);
-		
+
 		if (wifiStatus == WL_CONNECTED) {
 			break;
 		}
-		
+
 		delay(1000);
 		wifiStatus = WiFi.status();
 		Serial.println(wifiStatus);
@@ -351,11 +347,11 @@ void setup() {
 #ifdef SEND_TCP
 	// attempt to connect to WiFi network:
 	while (wifiStatus != WL_CONNECTED) {
-    if (millis() - setupTimerStart > SETUP_TIMEOUT) {
-      while(true) {
-        hibernate();
-      }
-    }
+		if (millis() - setupTimerStart > SETUP_TIMEOUT) {
+			while (true) {
+				hibernate();
+			}
+		}
 		Serial.print("Attempting to connect to SSID: ");
 		Serial.println(ssid);
 		// Connect to WPA/WPA2 network. Change this line if using open or WEP network:
@@ -372,11 +368,11 @@ void setup() {
 	Serial.println("\nStarting connection to server...");
 	// if you get a connection, report back via serial:
 	while (!client.connect(server, 11999)) {
-    if (millis() - setupTimerStart > SETUP_TIMEOUT) {
-      while(true) {
-        hibernate();
-      }
-    }
+		if (millis() - setupTimerStart > SETUP_TIMEOUT) {
+			while (true) {
+				hibernate();
+			}
+		}
 		Serial.println(server);
 		delay(100);
 	}
@@ -515,7 +511,7 @@ bool addPacket(uint32_t timestamp, EmotiBit::DataType t, float * data, size_t da
 	if (dataLen > 0) {
 		// ToDo: Consider faster ways to populate the outputMessage
 		outputMessage += "\n";
-		outputMessage += createPacketHeader( timestamp, typeTags[(uint8_t)t], dataLen);
+		outputMessage += createPacketHeader(timestamp, typeTags[(uint8_t)t], dataLen);
 
 		for (uint16_t i = 0; i < dataLen; i++) {
 			outputMessage += ",";
@@ -549,7 +545,7 @@ bool addPacket(uint32_t timestamp, EmotiBit::DataType t, float * data, size_t da
 bool addPacket(EmotiBit::DataType t) {
 #ifdef DEBUG_GET_DATA
 	Serial.print("addPacket: ");
-	Serial.println((uint8_t) t);
+	Serial.println((uint8_t)t);
 #endif // DEBUG
 	float * data;
 	uint32_t timestamp;
@@ -804,10 +800,10 @@ void loop() {
 
 	// Periodically request a timestamp between data dumps to assess round trip time
 	if (millis() - requestTimestampTimerStart > REQUEST_TIMESTAMP_DELAY) {
-			requestTimestampTimerStart = millis();
-			performTimestampSyncing();
+		requestTimestampTimerStart = millis();
+		performTimestampSyncing();
 	}
-		
+
 	// Send waiting data
 	bool newData = false;
 	if (millis() - sendTimerStart > NORMAL_MIN_SEND_DELAY) { // add a delay to batch data sending
@@ -942,53 +938,25 @@ void readSensors() {
 	static uint16_t charlieCounter;
 	if (charlieCounter > CHARLIE_SAMPLING_DIV) {
 		charlieLen = emotibit.getData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
-    
+
 		if (charlieLen > 0) {
 			//Serial.print("Charlie Start: ");
 			starttime = millis();
 			//Serial.println(starttime);
-
-			for (uint16_t i = 0; i < charlieLen; i++) {
-				charlieBuf.push_back(ppgData[i]);
+			//Serial.println(charlieLen);
+			
+				//Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
+				*ppgData = highpassFilter.input(*ppgData);
+				*ppgData /= 100;
+				if (*ppgData < 0) { *ppgData = 0; }
+				*ppgData = lowpassFilter.input(*ppgData);
+				drawHeart(true, *ppgData);
+				Serial.println(*ppgData);
 			}
-			if (charlieBuf.size() >= win) {
-        //Perform downsampling if neccessary by a factor of win
-				float sum = 0;
-				for (uint16_t i = 0; i < win; i++) {
-					sum += charlieBuf.data[i];
-				}
-				sum /= win;
-
-        //Reorganize buffer
-				if (charlieBuf.size() > win) {
-					uint16_t s = charlieBuf.size() - win;
-					float* old = new float[s];
-					for (uint16_t i = win; i < charlieBuf.size(); i++) {
-						old[i-win] = charlieBuf.data[i];
-					}
-					charlieBuf.clear();
-					for (uint16_t i = 0; i < s; i++) {
-						charlieBuf.push_back(old[i]);
-					}
-					delete[] old;
-				}
-				else {
-					charlieBuf.clear();
-				}
-          //Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
-          sum = highpassFilter.input(sum);
-          if(sum <0){sum = 0;}
-          sum = lowpassFilter.input(sum);
-          sum /= 100;
-          if(sum <6){sum = 0;}
-          drawHeart(true, sum);
-          Serial.println(sum);
-				}
 			//Serial.print("Charlie Duration: ");
 			//Serial.println(millis() - starttime);  //Less than 1 ms
 			charlieCounter = 0;
 		}
-	}
 	charlieCounter++;
 #endif
 }
@@ -1096,14 +1064,14 @@ void hibernate() {
 	WiFi.end();
 
 	while (ledPinBusy)
-	pinMode(LED_BUILTIN, OUTPUT);
+		pinMode(LED_BUILTIN, OUTPUT);
 
 	// ToDo: 
 	//	Shutdown IMU
 	//	Consider more low level power management
 
 	while (true) {
-		
+
 		digitalWrite(LED_BUILTIN, LOW); // Show we're asleep
 		int sleepMS = Watchdog.sleep();
 		digitalWrite(LED_BUILTIN, HIGH); // Show we're awake again
@@ -1161,7 +1129,7 @@ int8_t switchRead() {
 		else {
 			ledPinBusy = true;
 			pinMode(LED_BUILTIN, INPUT);
-			int8_t switchState = (int8_t) digitalRead(emotibit.switchPin);
+			int8_t switchState = (int8_t)digitalRead(emotibit.switchPin);
 			if (ledOn) {
 				pinMode(LED_BUILTIN, OUTPUT);
 				digitalWrite(LED_BUILTIN, HIGH);
@@ -1172,7 +1140,7 @@ int8_t switchRead() {
 	}
 	else {
 		pinMode(LED_BUILTIN, INPUT);
-		return (int8_t) digitalRead(emotibit.switchPin);
+		return (int8_t)digitalRead(emotibit.switchPin);
 	}
 }
 
@@ -1311,29 +1279,29 @@ bool sendUdpMessage(String & s) {
 
 bool sendMessage(String & s) {
 
-		// Serial sending
-		if (sendSerial) {
+	// Serial sending
+	if (sendSerial) {
 #ifdef DEBUG_GET_DATA
-			Serial.println("sending serial");
+		Serial.println("sending serial");
 #endif // DEBUG
-			Serial.print(s);
-		}
+		Serial.print(s);
+	}
 
 #ifdef SEND_TCP
-		if (socketReady) {
+	if (socketReady) {
 #ifdef DEBUG_GET_DATA
-			// ToDo: Determine if TCP packets need to be broken up similarly to UDP
-			Serial.println("sending TCP");
+		// ToDo: Determine if TCP packets need to be broken up similarly to UDP
+		Serial.println("sending TCP");
 #endif // DEBUG
-			client.print(s.substring(firstIndex, lastIndex));
-		}
+		client.print(s.substring(firstIndex, lastIndex));
+	}
 #endif // SEND_UDP
 #ifdef SEND_UDP
-		sendUdpMessage(s);
+	sendUdpMessage(s);
 #endif // SEND_UDP	
-		// Write to SD card after sending network messages
-		// This give the receiving computer time to process in advance of a sync exchange
-		sendSdCardMessage(s);  
+	// Write to SD card after sending network messages
+	// This give the receiving computer time to process in advance of a sync exchange
+	sendSdCardMessage(s);
 }
 
 void updateWiFi() {
@@ -1365,26 +1333,26 @@ void updateWiFi() {
 		}
 
 		if (millis() - networkBeginStart > WIFI_BEGIN_ATTEMPT_DELAY) {
-				if ((millis() - momentLost > WIFI_BEGIN_SWITCH_CRED) && (attempts >= 2)) {
-					switchCred = true;
-					attempts = 0;
-				}
-				else { switchCred = false; }
+			if ((millis() - momentLost > WIFI_BEGIN_SWITCH_CRED) && (attempts >= 2)) {
+				switchCred = true;
+				attempts = 0;
+			}
+			else { switchCred = false; }
 
-				if (switchCred && (configPos != configSize - 1)) { configPos++; }
-				else if (switchCred && (configPos == configSize - 1)) { configPos = 0; }
-				Serial.println("<<<<<<< Wifi begin >>>>>>>");
-				Serial.println(millis());
-				Serial.println(WIFI_BEGIN_ATTEMPT_DELAY);
-				Serial.println(wifiRebootCounter);
-				Serial.println(wifiRebootTarget);
-				//Serial.println(momentLost);               //uncomment for debugging
-				Serial.println(configList[configPos].ssid);
-				wifiStatus = WiFi.begin(configList[configPos].ssid, configList[configPos].password);
-				attempts++;
-				networkBeginStart = millis();
-				Serial.println(networkBeginStart);
-				Serial.println("<<<<<<<  >>>>>>>");
+			if (switchCred && (configPos != configSize - 1)) { configPos++; }
+			else if (switchCred && (configPos == configSize - 1)) { configPos = 0; }
+			Serial.println("<<<<<<< Wifi begin >>>>>>>");
+			Serial.println(millis());
+			Serial.println(WIFI_BEGIN_ATTEMPT_DELAY);
+			Serial.println(wifiRebootCounter);
+			Serial.println(wifiRebootTarget);
+			//Serial.println(momentLost);               //uncomment for debugging
+			Serial.println(configList[configPos].ssid);
+			wifiStatus = WiFi.begin(configList[configPos].ssid, configList[configPos].password);
+			attempts++;
+			networkBeginStart = millis();
+			Serial.println(networkBeginStart);
+			Serial.println("<<<<<<<  >>>>>>>");
 		}
 		if (wifiStatus == WL_CONNECTED) {
 			wifiReady = true;
