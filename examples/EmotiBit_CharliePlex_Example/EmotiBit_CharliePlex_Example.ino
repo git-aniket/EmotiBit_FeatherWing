@@ -37,10 +37,13 @@ uint8_t heartHor[7][15] = { {0, 0, 0,  0,  0,  1,  1,  0,  1,  1,  0,  0,  0,  0
 			  {0, 0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0} };
 
 unsigned long starttime = 0;
-float * ppgData;
-uint32_t charlieTS;
+const float * ppgData = nullptr;
+const uint32_t* charlieTS = nullptr;
+float dataPoint;
 size_t charlieLen;
-const float lp_freq = 12;
+size_t lastSize;
+const float atten = 100;    //100 for finger, probably 10 for arm
+const float lp_freq = 10;
 const float hp_freq = 0.5;
 FilterOnePole lowpassFilter(LOWPASS, lp_freq, 0.0, 25);
 FilterOnePole highpassFilter(HIGHPASS, hp_freq, 0.0, 25);
@@ -937,25 +940,26 @@ void readSensors() {
 #if 1
 	static uint16_t charlieCounter;
 	if (charlieCounter > CHARLIE_SAMPLING_DIV) {
-		charlieLen = emotibit.getData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
+		charlieLen = emotibit.readData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
 
-		if (charlieLen > 0) {
+		if ((charlieLen > 0)&&(charlieLen != lastSize)) {
 			//Serial.print("Charlie Start: ");
 			starttime = millis();
 			//Serial.println(starttime);
 			//Serial.println(charlieLen);
-			
+				dataPoint = ppgData[charlieLen-1];
 				//Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
-				*ppgData = highpassFilter.input(*ppgData);
-				*ppgData /= 100;
-				if (*ppgData < 0) { *ppgData = 0; }
-				*ppgData = lowpassFilter.input(*ppgData);
-				drawHeart(true, *ppgData);
-				Serial.println(*ppgData);
+				dataPoint = highpassFilter.input(dataPoint);
+				dataPoint /= atten;
+				if (dataPoint < 0) { dataPoint = 0; }
+				dataPoint = lowpassFilter.input(dataPoint);
+				drawHeart(true, dataPoint);
+				Serial.println(dataPoint);
 			}
 			//Serial.print("Charlie Duration: ");
 			//Serial.println(millis() - starttime);  //Less than 1 ms
 			charlieCounter = 0;
+			lastSize =charlieLen;
 		}
 	charlieCounter++;
 #endif

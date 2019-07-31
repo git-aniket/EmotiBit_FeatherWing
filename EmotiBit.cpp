@@ -694,7 +694,14 @@ int8_t EmotiBit::pushData(EmotiBit::DataType type, float data, uint32_t * timest
 		return (int8_t)EmotiBit::Error::INDEX_OUT_OF_BOUNDS;
 	}
 }
-
+size_t EmotiBit::readData(DataType type, const float** data, const uint32_t ** timestamp) {
+	if ((uint8_t)type < (uint8_t)EmotiBit::DataType::length) {
+			return dataDoubleBuffers[(uint8_t)type]->readData(data, timestamp);
+	}
+	else {
+			return (int8_t)EmotiBit::Error::NONE;
+	}
+}
 size_t EmotiBit::getData(DataType type, float** data, uint32_t * timestamp) {
 #ifdef DEBUG
 	Serial.print("getData: type=");
