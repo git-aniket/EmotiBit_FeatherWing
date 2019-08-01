@@ -17,53 +17,64 @@ bool sendConsole = false;
 #include <Adafruit_GFX.h>
 #include <Adafruit_IS31FL3731.h>
 #include <Filters.h>
+#include <cmath>
 
 Adafruit_IS31FL3731_Wing ledmatrix = Adafruit_IS31FL3731_Wing();
 SdFat SD;
 
 uint8_t heartVert[7][15] = { {0, 0, 0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0} };
+        {0, 0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+        {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0,  0},
+        {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+        {0, 0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+        {0, 0,  0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0} };
 uint8_t heartHor[7][15] = { {0, 0, 0,  0,  0,  1,  1,  0,  1,  1,  0,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0,  0},
-			  {0, 0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0} };
+        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+        {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0,  0},
+        {0, 0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0,  0},
+        {0, 0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0} };
 
 unsigned long starttime = 0;
+bool newHeartFrame = false;
 const float * ppgData = nullptr;
 const uint32_t* charlieTS = nullptr;
 float dataPoint;
+float maxHeart =0;
+const float onRatio = 1;
+const uint8_t maxBrightness = 15;
+float peakDetect = 0;
+const float pdMin = 10;
+float lastPD = 0;
+const float tau = -1.4;   // exp(tau * t * T)
 size_t charlieLen;
 size_t lastSize;
-const float atten = 100;    //100 for finger, probably 10 for arm
-const float lp_freq = 10;
+const float lp_freq = 8;
 const float hp_freq = 0.5;
-FilterOnePole lowpassFilter(LOWPASS, lp_freq, 0.0, 25);
-FilterOnePole highpassFilter(HIGHPASS, hp_freq, 0.0, 25);
+const float fs =  25;
+const float T = 1/fs;
+const float timeConst = exp(tau * T);
+FilterOnePole lowpassFilter(LOWPASS, lp_freq, 0.0, fs);
+FilterOnePole highpassFilter(HIGHPASS, hp_freq, 0.0, fs);
 
 void drawHeart(bool isVert = true, uint8_t brightness = 15) {
-	uint8_t * heart = nullptr;
-	if (isVert == true) {
-		heart = &heartVert[0][0];
-	}
-	else {
-		heart = &heartHor[0][0];
-	}
-	for (uint8_t i = 0; i < 7; i++)
-		for (uint8_t j = 0; j < 15; j++)
-			if (heart[15 * i + j] == 1) { ledmatrix.drawPixel(j, i, brightness); }
+  uint8_t * heart = nullptr;
+  if (isVert == true) {
+    heart = &heartVert[0][0];
+  }
+  else {
+    heart = &heartHor[0][0];
+  }
+  for (uint8_t i = 0; i < 7; i++)
+    for (uint8_t j = 0; j < 15; j++)
+      if (heart[15 * i + j] == 1) { ledmatrix.drawPixel(j, i, brightness); }
 }
 
 typedef struct EmotibitConfig {
-	String ssid = "";
-	String password = "";
+  String ssid = "";
+  String password = "";
 };
 size_t configSize;
 size_t configPos;
@@ -128,7 +139,7 @@ String consoleMessage;
 bool socketReady = false;
 bool wifiReady = false;
 uint32_t wifiRebootCounter = 0;
-uint32_t wifiRebootTarget = 20000;				/*Set to 250 for WiFi debugging, 20000 for Release*/
+uint32_t wifiRebootTarget = 20000;        /*Set to 250 for WiFi debugging, 20000 for Release*/
 uint32_t networkBeginStart;
 uint32_t WIFI_BEGIN_ATTEMPT_DELAY = 5000;
 uint32_t WIFI_BEGIN_SWITCH_CRED = 300000;      //Set to 30000 for debug, 300000 for Release
@@ -187,17 +198,17 @@ void setTimerFrequency(int frequencyHz);
 void TC3_Handler();
 
 //struct DataStatus {
-//	int8_t eda = 0;
-//	int8_t tempHumidity = 0;
-//	int8_t imu = 0;
-//	int8_t ppg = 0;
+//  int8_t eda = 0;
+//  int8_t tempHumidity = 0;
+//  int8_t imu = 0;
+//  int8_t ppg = 0;
 //} dataStatus;
 
 struct AcquireData {
-	bool eda = true;
-	bool tempHumidity = true;
-	bool imu = true;
-	bool ppg = true;
+  bool eda = true;
+  bool tempHumidity = true;
+  bool imu = true;
+  bool ppg = true;
 } acquireData;
 
 
@@ -207,1246 +218,1341 @@ uint8_t printLen[(uint8_t)EmotiBit::DataType::length];
 bool sendData[(uint8_t)EmotiBit::DataType::length];
 
 void setup() {
-	Serial.println("setup()");
+  Serial.println("setup()");
 
-	pinMode(LED_BUILTIN, OUTPUT);
-	digitalWrite(LED_BUILTIN, HIGH);
-	ledOn = true;
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+  ledOn = true;
 
-	setupTimerStart = millis();
+  setupTimerStart = millis();
 
-	if (!outputMessage.reserve(OUT_MESSAGE_RESERVE_SIZE)) {
-		Serial.println("Failed to reserve memory for output");
-		while (true) {
-			hibernate();
-		}
-	}
+  if (!outputMessage.reserve(OUT_MESSAGE_RESERVE_SIZE)) {
+    Serial.println("Failed to reserve memory for output");
+    while (true) {
+      hibernate();
+    }
+  }
 
-	delay(500);
+  delay(500);
 
-	Serial.begin(SERIAL_BAUD);
-	while (!Serial);
-	Serial.println("Serial started");
+  Serial.begin(SERIAL_BAUD);
+  //while (!Serial);
+  Serial.println("Serial started");
 
-	delay(500);
+  delay(500);
 
-	emotibit.setSensorTimer(EmotiBit::SensorTimer::MANUAL);
-	emotibit.setup(EmotiBit::Version::V01B, 16);
-	EmotiBit::SamplingRates samplingRates;
-	samplingRates.accelerometer = BASE_SAMPLING_FREQ;
-	samplingRates.gyroscope = BASE_SAMPLING_FREQ;
-	samplingRates.magnetometer = BASE_SAMPLING_FREQ;
-	samplingRates.eda = BASE_SAMPLING_FREQ / EDA_SAMPLING_DIV;
-	samplingRates.humidity = BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2;
-	samplingRates.temperature = BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2;
-	samplingRates.thermistor = BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2;
-	emotibit.setSamplingRates(samplingRates);
-	EmotiBit::SamplesAveraged samplesAveraged;
-	samplesAveraged.eda = BASE_SAMPLING_FREQ / EDA_SAMPLING_DIV / 15;
-	samplesAveraged.humidity = (float)BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2 / 7.5f;
-	samplesAveraged.temperature = (float)BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2 / 7.5f;
-	samplesAveraged.thermistor = (float)BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2 / 7.5f;
-	emotibit.setSamplesAveraged(samplesAveraged);
+  emotibit.setSensorTimer(EmotiBit::SensorTimer::MANUAL);
+  emotibit.setup(EmotiBit::Version::V01B, 16);
+  EmotiBit::SamplingRates samplingRates;
+  samplingRates.accelerometer = BASE_SAMPLING_FREQ;
+  samplingRates.gyroscope = BASE_SAMPLING_FREQ;
+  samplingRates.magnetometer = BASE_SAMPLING_FREQ;
+  samplingRates.eda = BASE_SAMPLING_FREQ / EDA_SAMPLING_DIV;
+  samplingRates.humidity = BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2;
+  samplingRates.temperature = BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2;
+  samplingRates.thermistor = BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2;
+  emotibit.setSamplingRates(samplingRates);
+  EmotiBit::SamplesAveraged samplesAveraged;
+  samplesAveraged.eda = BASE_SAMPLING_FREQ / EDA_SAMPLING_DIV / 15;
+  samplesAveraged.humidity = (float)BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2 / 7.5f;
+  samplesAveraged.temperature = (float)BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2 / 7.5f;
+  samplesAveraged.thermistor = (float)BASE_SAMPLING_FREQ / TEMPERATURE_SAMPLING_DIV / 2 / 7.5f;
+  emotibit.setSamplesAveraged(samplesAveraged);
 
-	if (!ledmatrix.begin()) {
-		Serial.println("IS31 not found");
-		hibernate();
-	}
-	Serial.println("IS31 found!");
+  if (!ledmatrix.begin()) {
+    Serial.println("IS31 not found");
+    hibernate();
+  }
+  Serial.println("IS31 found!");
 
-	delay(500);
+  delay(500);
 
-	Serial.print("Initializing SD card...");
-	// see if the card is present and can be initialized:
-	if (!SD.begin(emotibit._sdCardChipSelectPin)) {
-		Serial.print("Card failed, or not present on chip select ");
-		Serial.println(emotibit._sdCardChipSelectPin);
-		// don't do anything more:
-		// ToDo: Handle case where we still want to send network data
-		while (true) {
-			hibernate();
-		}
-	}
-	Serial.println("card initialized.");
-	SD.ls(LS_R);
+  Serial.print("Initializing SD card...");
+  // see if the card is present and can be initialized:
+  if (!SD.begin(emotibit._sdCardChipSelectPin)) {
+    Serial.print("Card failed, or not present on chip select ");
+    Serial.println(emotibit._sdCardChipSelectPin);
+    // don't do anything more:
+    // ToDo: Handle case where we still want to send network data
+    while (true) {
+      hibernate();
+    }
+  }
+  Serial.println("card initialized.");
+  SD.ls(LS_R);
 
-	Serial.print(F("Loading configuration file: "));
-	Serial.println(configFilename);
-	if (!loadConfigFile(configFilename)) {
-		Serial.println("SD card configuration file parsing failed.");
-		Serial.println("Create a file 'config.txt' with the following JSON:");
-		Serial.println("{\"WifiCredentials\": [{\"ssid\":\"SSSS\",\"password\" : \"PPPP\"}]}");
-		while (true) {
-			hibernate();
-		}
-	}
+  Serial.print(F("Loading configuration file: "));
+  Serial.println(configFilename);
+  if (!loadConfigFile(configFilename)) {
+    Serial.println("SD card configuration file parsing failed.");
+    Serial.println("Create a file 'config.txt' with the following JSON:");
+    Serial.println("{\"WifiCredentials\": [{\"ssid\":\"SSSS\",\"password\" : \"PPPP\"}]}");
+    while (true) {
+      hibernate();
+    }
+  }
 
 
-	//File root = SD.open("/");
-	//printDirectory(root, 0);
-	//Serial.println("done!");
+  //File root = SD.open("/");
+  //printDirectory(root, 0);
+  //Serial.println("done!");
 
 #if defined(SEND_UDP) || defined(SEND_TCP)
-	//Configure pins for Adafruit ATWINC1500 Feather
-	WiFi.setPins(8, 7, 4, 2);
-	//WiFi.noLowPowerMode();
-	WiFi.lowPowerMode();
+  //Configure pins for Adafruit ATWINC1500 Feather
+  WiFi.setPins(8, 7, 4, 2);
+  //WiFi.noLowPowerMode();
+  WiFi.lowPowerMode();
 
-	//WiFi.maxLowPowerMode();
-	// check for the presence of the shield:
-	if (WiFi.status() == WL_NO_SHIELD) {
-		Serial.println("WiFi shield not present");
-		// don't continue:
-		while (true) {
-			hibernate();
-		}
-	}
+  //WiFi.maxLowPowerMode();
+  // check for the presence of the shield:
+  if (WiFi.status() == WL_NO_SHIELD) {
+    Serial.println("WiFi shield not present");
+    // don't continue:
+    while (true) {
+      hibernate();
+    }
+  }
 #endif
 #ifdef SEND_UDP
-	// attempt to connect to WiFi network:
-	configPos = configSize - 1;
-	while (wifiStatus != WL_CONNECTED) {
-		if (millis() - setupTimerStart > SETUP_TIMEOUT) {
-			Serial.println("*********** Setup Timeout **************");
-			while (true) {
-				hibernate();
-			}
-		}
+  // attempt to connect to WiFi network:
+  configPos = configSize - 1;
+  while (wifiStatus != WL_CONNECTED) {
+    if (millis() - setupTimerStart > SETUP_TIMEOUT) {
+      Serial.println("*********** Setup Timeout **************");
+      while (true) {
+        hibernate();
+      }
+    }
 
-		if (configPos == configSize - 1) { configPos = 0; }
-		else {
-			configPos++;
-		}
+    if (configPos == configSize - 1) { configPos = 0; }
+    else {
+      configPos++;
+    }
 
-		// Connect to WPA/WPA2 network. Change this line if using open or WEP network:
-		Serial.print("Attempting to connect to SSID: ");
-		Serial.println(configList[configPos].ssid);
-		wifiStatus = WiFi.begin(configList[configPos].ssid, configList[configPos].password);
-		// wait for connection:
-		Serial.println(wifiStatus);
+    // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(configList[configPos].ssid);
+    wifiStatus = WiFi.begin(configList[configPos].ssid, configList[configPos].password);
+    // wait for connection:
+    Serial.println(wifiStatus);
 
-		if (wifiStatus == WL_CONNECTED) {
-			break;
-		}
+    if (wifiStatus == WL_CONNECTED) {
+      break;
+    }
 
-		delay(1000);
-		wifiStatus = WiFi.status();
-		Serial.println(wifiStatus);
-	}
-	//Serial.print("Time2WiFiConnect: ");
-	//Serial.println(millis() - setupTimerStart);
-	wifiReady = true;
-	getMomentLost = true;
-	Serial.println("Connected to wifi");
-	printWiFiStatus();
-	Serial.println("\nStarting connection to server...");
-	// if you get a connection, report back via serial:
-	Udp.begin(localPort);
-	socketReady = true;
-	networkBeginStart = millis();
-	WiFi.setTimeout(15);			/*Fixes loop delay due to WiFi.begin()*/
+    delay(1000);
+    wifiStatus = WiFi.status();
+    Serial.println(wifiStatus);
+  }
+  //Serial.print("Time2WiFiConnect: ");
+  //Serial.println(millis() - setupTimerStart);
+  wifiReady = true;
+  getMomentLost = true;
+  Serial.println("Connected to wifi");
+  printWiFiStatus();
+  Serial.println("\nStarting connection to server...");
+  // if you get a connection, report back via serial:
+  Udp.begin(localPort);
+  socketReady = true;
+  networkBeginStart = millis();
+  WiFi.setTimeout(15);      /*Fixes loop delay due to WiFi.begin()*/
 #endif
 
 #ifdef SEND_TCP
-	// attempt to connect to WiFi network:
-	while (wifiStatus != WL_CONNECTED) {
-		if (millis() - setupTimerStart > SETUP_TIMEOUT) {
-			while (true) {
-				hibernate();
-			}
-		}
-		Serial.print("Attempting to connect to SSID: ");
-		Serial.println(ssid);
-		// Connect to WPA/WPA2 network. Change this line if using open or WEP network:
-		wifiStatus = WiFi.begin(ssid, pass);
+  // attempt to connect to WiFi network:
+  while (wifiStatus != WL_CONNECTED) {
+    if (millis() - setupTimerStart > SETUP_TIMEOUT) {
+      while (true) {
+        hibernate();
+      }
+    }
+    Serial.print("Attempting to connect to SSID: ");
+    Serial.println(ssid);
+    // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
+    wifiStatus = WiFi.begin(ssid, pass);
 
-		// wait 1 second for connection:
-		delay(1000);
-	}
-	wifiReady = true;
-	Serial.println("Connected to wifi");
-	printWiFiStatus();
-	Serial.println(WiFi.gatewayIP());
-	Serial.println(server);
-	Serial.println("\nStarting connection to server...");
-	// if you get a connection, report back via serial:
-	while (!client.connect(server, 11999)) {
-		if (millis() - setupTimerStart > SETUP_TIMEOUT) {
-			while (true) {
-				hibernate();
-			}
-		}
-		Serial.println(server);
-		delay(100);
-	}
-	socketReady = true;
-	Serial.println("connected to server");
-	networkBeginStart = millis();
+    // wait 1 second for connection:
+    delay(1000);
+  }
+  wifiReady = true;
+  Serial.println("Connected to wifi");
+  printWiFiStatus();
+  Serial.println(WiFi.gatewayIP());
+  Serial.println(server);
+  Serial.println("\nStarting connection to server...");
+  // if you get a connection, report back via serial:
+  while (!client.connect(server, 11999)) {
+    if (millis() - setupTimerStart > SETUP_TIMEOUT) {
+      while (true) {
+        hibernate();
+      }
+    }
+    Serial.println(server);
+    delay(100);
+  }
+  socketReady = true;
+  Serial.println("connected to server");
+  networkBeginStart = millis();
 #endif
 
-	// Initialise I2C communication as MASTER
-	//Wire.begin();
+  // Initialise I2C communication as MASTER
+  //Wire.begin();
 
 
 
-	typeTags[(uint8_t)EmotiBit::DataType::EDA] = "EA";
-	typeTags[(uint8_t)EmotiBit::DataType::EDL] = "EL";
-	typeTags[(uint8_t)EmotiBit::DataType::EDR] = "ER";
-	typeTags[(uint8_t)EmotiBit::DataType::PPG_INFRARED] = "PI";
-	typeTags[(uint8_t)EmotiBit::DataType::PPG_RED] = "PR";
-	typeTags[(uint8_t)EmotiBit::DataType::PPG_GREEN] = "PG";
-	typeTags[(uint8_t)EmotiBit::DataType::TEMPERATURE_0] = "T0";
-	typeTags[(uint8_t)EmotiBit::DataType::TEMPERATURE_HP0] = "TH";
-	typeTags[(uint8_t)EmotiBit::DataType::HUMIDITY_0] = "H0";
-	typeTags[(uint8_t)EmotiBit::DataType::ACCELEROMETER_X] = "AX";
-	typeTags[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Y] = "AY";
-	typeTags[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Z] = "AZ";
-	typeTags[(uint8_t)EmotiBit::DataType::GYROSCOPE_X] = "GX";
-	typeTags[(uint8_t)EmotiBit::DataType::GYROSCOPE_Y] = "GY";
-	typeTags[(uint8_t)EmotiBit::DataType::GYROSCOPE_Z] = "GZ";
-	typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_X] = "MX";
-	typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Y] = "MY";
-	typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = "MZ";
-	typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = "MZ";
-	typeTags[(uint8_t)EmotiBit::DataType::BATTERY_VOLTAGE] = "BV";
-	typeTags[(uint8_t)EmotiBit::DataType::BATTERY_PERCENT] = "B%";
-	typeTags[(uint8_t)EmotiBit::DataType::DATA_CLIPPING] = "DC";
-	typeTags[(uint8_t)EmotiBit::DataType::DATA_OVERFLOW] = "DO";
-	//typeTags[(uint8_t)EmotiBit::DataType::PUSH_WHILE_GETTING] = "PW";
+  typeTags[(uint8_t)EmotiBit::DataType::EDA] = "EA";
+  typeTags[(uint8_t)EmotiBit::DataType::EDL] = "EL";
+  typeTags[(uint8_t)EmotiBit::DataType::EDR] = "ER";
+  typeTags[(uint8_t)EmotiBit::DataType::PPG_INFRARED] = "PI";
+  typeTags[(uint8_t)EmotiBit::DataType::PPG_RED] = "PR";
+  typeTags[(uint8_t)EmotiBit::DataType::PPG_GREEN] = "PG";
+  typeTags[(uint8_t)EmotiBit::DataType::TEMPERATURE_0] = "T0";
+  typeTags[(uint8_t)EmotiBit::DataType::TEMPERATURE_HP0] = "TH";
+  typeTags[(uint8_t)EmotiBit::DataType::HUMIDITY_0] = "H0";
+  typeTags[(uint8_t)EmotiBit::DataType::ACCELEROMETER_X] = "AX";
+  typeTags[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Y] = "AY";
+  typeTags[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Z] = "AZ";
+  typeTags[(uint8_t)EmotiBit::DataType::GYROSCOPE_X] = "GX";
+  typeTags[(uint8_t)EmotiBit::DataType::GYROSCOPE_Y] = "GY";
+  typeTags[(uint8_t)EmotiBit::DataType::GYROSCOPE_Z] = "GZ";
+  typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_X] = "MX";
+  typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Y] = "MY";
+  typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = "MZ";
+  typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = "MZ";
+  typeTags[(uint8_t)EmotiBit::DataType::BATTERY_VOLTAGE] = "BV";
+  typeTags[(uint8_t)EmotiBit::DataType::BATTERY_PERCENT] = "B%";
+  typeTags[(uint8_t)EmotiBit::DataType::DATA_CLIPPING] = "DC";
+  typeTags[(uint8_t)EmotiBit::DataType::DATA_OVERFLOW] = "DO";
+  //typeTags[(uint8_t)EmotiBit::DataType::PUSH_WHILE_GETTING] = "PW";
 
-	printLen[(uint8_t)EmotiBit::DataType::EDA] = 6;
-	printLen[(uint8_t)EmotiBit::DataType::EDL] = 6;
-	printLen[(uint8_t)EmotiBit::DataType::EDR] = 6;
-	printLen[(uint8_t)EmotiBit::DataType::PPG_INFRARED] = 0;
-	printLen[(uint8_t)EmotiBit::DataType::PPG_RED] = 0;
-	printLen[(uint8_t)EmotiBit::DataType::PPG_GREEN] = 0;
-	printLen[(uint8_t)EmotiBit::DataType::TEMPERATURE_0] = 3;
-	printLen[(uint8_t)EmotiBit::DataType::TEMPERATURE_HP0] = 0;
-	printLen[(uint8_t)EmotiBit::DataType::HUMIDITY_0] = 3;
-	printLen[(uint8_t)EmotiBit::DataType::ACCELEROMETER_X] = 3;
-	printLen[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Y] = 3;
-	printLen[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Z] = 3;
-	printLen[(uint8_t)EmotiBit::DataType::GYROSCOPE_X] = 3;
-	printLen[(uint8_t)EmotiBit::DataType::GYROSCOPE_Y] = 3;
-	printLen[(uint8_t)EmotiBit::DataType::GYROSCOPE_Z] = 3;
-	printLen[(uint8_t)EmotiBit::DataType::MAGNETOMETER_X] = 0;
-	printLen[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Y] = 0;
-	printLen[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = 0;
-	printLen[(uint8_t)EmotiBit::DataType::BATTERY_VOLTAGE] = 2;
-	printLen[(uint8_t)EmotiBit::DataType::BATTERY_PERCENT] = 0;
+  printLen[(uint8_t)EmotiBit::DataType::EDA] = 6;
+  printLen[(uint8_t)EmotiBit::DataType::EDL] = 6;
+  printLen[(uint8_t)EmotiBit::DataType::EDR] = 6;
+  printLen[(uint8_t)EmotiBit::DataType::PPG_INFRARED] = 0;
+  printLen[(uint8_t)EmotiBit::DataType::PPG_RED] = 0;
+  printLen[(uint8_t)EmotiBit::DataType::PPG_GREEN] = 0;
+  printLen[(uint8_t)EmotiBit::DataType::TEMPERATURE_0] = 3;
+  printLen[(uint8_t)EmotiBit::DataType::TEMPERATURE_HP0] = 0;
+  printLen[(uint8_t)EmotiBit::DataType::HUMIDITY_0] = 3;
+  printLen[(uint8_t)EmotiBit::DataType::ACCELEROMETER_X] = 3;
+  printLen[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Y] = 3;
+  printLen[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Z] = 3;
+  printLen[(uint8_t)EmotiBit::DataType::GYROSCOPE_X] = 3;
+  printLen[(uint8_t)EmotiBit::DataType::GYROSCOPE_Y] = 3;
+  printLen[(uint8_t)EmotiBit::DataType::GYROSCOPE_Z] = 3;
+  printLen[(uint8_t)EmotiBit::DataType::MAGNETOMETER_X] = 0;
+  printLen[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Y] = 0;
+  printLen[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = 0;
+  printLen[(uint8_t)EmotiBit::DataType::BATTERY_VOLTAGE] = 2;
+  printLen[(uint8_t)EmotiBit::DataType::BATTERY_PERCENT] = 0;
 
-	sendData[(uint8_t)EmotiBit::DataType::EDA] = true;
-	sendData[(uint8_t)EmotiBit::DataType::EDL] = true;
-	sendData[(uint8_t)EmotiBit::DataType::EDR] = true;
-	sendData[(uint8_t)EmotiBit::DataType::PPG_INFRARED] = true;
-	sendData[(uint8_t)EmotiBit::DataType::PPG_RED] = true;
-	sendData[(uint8_t)EmotiBit::DataType::PPG_GREEN] = true;
-	sendData[(uint8_t)EmotiBit::DataType::TEMPERATURE_0] = true;
-	sendData[(uint8_t)EmotiBit::DataType::TEMPERATURE_HP0] = true;
-	sendData[(uint8_t)EmotiBit::DataType::HUMIDITY_0] = true;
-	sendData[(uint8_t)EmotiBit::DataType::ACCELEROMETER_X] = true;
-	sendData[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Y] = true;
-	sendData[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Z] = true;
-	sendData[(uint8_t)EmotiBit::DataType::GYROSCOPE_X] = true;
-	sendData[(uint8_t)EmotiBit::DataType::GYROSCOPE_Y] = true;
-	sendData[(uint8_t)EmotiBit::DataType::GYROSCOPE_Z] = true;
-	sendData[(uint8_t)EmotiBit::DataType::MAGNETOMETER_X] = true;
-	sendData[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Y] = true;
-	sendData[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = true;
-	sendData[(uint8_t)EmotiBit::DataType::BATTERY_VOLTAGE] = true;
-	sendData[(uint8_t)EmotiBit::DataType::BATTERY_PERCENT] = true;
-	sendData[(uint8_t)EmotiBit::DataType::DATA_CLIPPING] = true;
-	sendData[(uint8_t)EmotiBit::DataType::DATA_OVERFLOW] = true;
+  sendData[(uint8_t)EmotiBit::DataType::EDA] = true;
+  sendData[(uint8_t)EmotiBit::DataType::EDL] = true;
+  sendData[(uint8_t)EmotiBit::DataType::EDR] = true;
+  sendData[(uint8_t)EmotiBit::DataType::PPG_INFRARED] = true;
+  sendData[(uint8_t)EmotiBit::DataType::PPG_RED] = true;
+  sendData[(uint8_t)EmotiBit::DataType::PPG_GREEN] = true;
+  sendData[(uint8_t)EmotiBit::DataType::TEMPERATURE_0] = true;
+  sendData[(uint8_t)EmotiBit::DataType::TEMPERATURE_HP0] = true;
+  sendData[(uint8_t)EmotiBit::DataType::HUMIDITY_0] = true;
+  sendData[(uint8_t)EmotiBit::DataType::ACCELEROMETER_X] = true;
+  sendData[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Y] = true;
+  sendData[(uint8_t)EmotiBit::DataType::ACCELEROMETER_Z] = true;
+  sendData[(uint8_t)EmotiBit::DataType::GYROSCOPE_X] = true;
+  sendData[(uint8_t)EmotiBit::DataType::GYROSCOPE_Y] = true;
+  sendData[(uint8_t)EmotiBit::DataType::GYROSCOPE_Z] = true;
+  sendData[(uint8_t)EmotiBit::DataType::MAGNETOMETER_X] = true;
+  sendData[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Y] = true;
+  sendData[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = true;
+  sendData[(uint8_t)EmotiBit::DataType::BATTERY_VOLTAGE] = true;
+  sendData[(uint8_t)EmotiBit::DataType::BATTERY_PERCENT] = true;
+  sendData[(uint8_t)EmotiBit::DataType::DATA_CLIPPING] = true;
+  sendData[(uint8_t)EmotiBit::DataType::DATA_OVERFLOW] = true;
 
-	sendTimerStart = millis();
-	requestTimestampTimerStart = millis();
+  sendTimerStart = millis();
+  requestTimestampTimerStart = millis();
 
-	//Serial.println("Free Ram :" + String(FreeRam(), DEC) + " bytes");
-	Serial.println("Setup complete");
-	Serial.println("Starting interrupts");
-	startTimer(BASE_SAMPLING_FREQ);
-	// ToDo: utilize separate strings for SD card writable messages vs transmit acks
+  //Serial.println("Free Ram :" + String(FreeRam(), DEC) + " bytes");
+  Serial.println("Setup complete");
+  Serial.println("Starting interrupts");
+  startTimer(BASE_SAMPLING_FREQ);
+  // ToDo: utilize separate strings for SD card writable messages vs transmit acks
 
-	sendResetPacket = true;
+  sendResetPacket = true;
 }
 
 String createPacketHeader(uint32_t timestamp, String typeTag, size_t dataLen) {
-	static String header;
-	header = "";
-	header += timestamp;
-	header += ",";
-	header += packetCount;
-	header += ",";
-	header += dataLen;
-	header += ",";
-	header += typeTag;
-	header += ",";
-	header += protocolVersion;
-	header += ",";
-	header += defaultDataReliabilityScore;
-	//createPacketHeader(tempHeader, timestamp, typeTag, dataLen);
-	return header;
+  static String header;
+  header = "";
+  header += timestamp;
+  header += ",";
+  header += packetCount;
+  header += ",";
+  header += dataLen;
+  header += ",";
+  header += typeTag;
+  header += ",";
+  header += protocolVersion;
+  header += ",";
+  header += defaultDataReliabilityScore;
+  //createPacketHeader(tempHeader, timestamp, typeTag, dataLen);
+  return header;
 }
 
 
 //bool createPacketHeader(String &header, uint32_t timestamp, String typeTag, size_t dataLen) {
-//	header += timestamp;
-//	header += ",";
-//	header += packetCount;
-//	header += ",";
-//	header += dataLen;
-//	header += ",";
-//	header += typeTag;
-//	header += ",";
-//	header += protocolVersion;
-//	header += ",";
-//	header += defaultDataReliabilityScore;
-//	return true;
+//  header += timestamp;
+//  header += ",";
+//  header += packetCount;
+//  header += ",";
+//  header += dataLen;
+//  header += ",";
+//  header += typeTag;
+//  header += ",";
+//  header += protocolVersion;
+//  header += ",";
+//  header += defaultDataReliabilityScore;
+//  return true;
 //}
 
 
 bool addPacket(uint32_t timestamp, EmotiBit::DataType t, float * data, size_t dataLen, uint8_t precision = 4) {
 #ifdef DEBUG_GET_DATA
-	Serial.print("addPacket: ");
-	Serial.println(typeTag);
+  Serial.print("addPacket: ");
+  Serial.println(typeTag);
 #endif // DEBUGs
 
-	if (dataLen > 0) {
-		// ToDo: Consider faster ways to populate the outputMessage
-		outputMessage += "\n";
-		outputMessage += createPacketHeader(timestamp, typeTags[(uint8_t)t], dataLen);
+  if (dataLen > 0) {
+    // ToDo: Consider faster ways to populate the outputMessage
+    outputMessage += "\n";
+    outputMessage += createPacketHeader(timestamp, typeTags[(uint8_t)t], dataLen);
 
-		for (uint16_t i = 0; i < dataLen; i++) {
-			outputMessage += ",";
-			if (t == EmotiBit::DataType::DATA_CLIPPING || t == EmotiBit::DataType::DATA_OVERFLOW) {
-				// If it's a clipping/overflow type, write the data as a string rather than float
-				// ToDo: consider just storing the data as a string instead of a float to avoid steps
-				outputMessage += typeTags[(uint8_t)data[i]];
-			}
-			else {
-				outputMessage += String(data[i], precision);
-			}
-		}
+    for (uint16_t i = 0; i < dataLen; i++) {
+      outputMessage += ",";
+      if (t == EmotiBit::DataType::DATA_CLIPPING || t == EmotiBit::DataType::DATA_OVERFLOW) {
+        // If it's a clipping/overflow type, write the data as a string rather than float
+        // ToDo: consider just storing the data as a string instead of a float to avoid steps
+        outputMessage += typeTags[(uint8_t)data[i]];
+      }
+      else {
+        outputMessage += String(data[i], precision);
+      }
+    }
 
-		if (sendConsole && !sendSerial) {
-			consoleMessage = "";
-			consoleMessage += packetCount;
-			consoleMessage += ",";
-			consoleMessage += dataLen;
-			Serial.println(consoleMessage);
-		}
-		else {
-			//Serial.print("*");
-		}
-		packetCount++;
-		loopCount = 0;
-		return true;
-	}
-	return false;
+    if (sendConsole && !sendSerial) {
+      consoleMessage = "";
+      consoleMessage += packetCount;
+      consoleMessage += ",";
+      consoleMessage += dataLen;
+      Serial.println(consoleMessage);
+    }
+    else {
+      //Serial.print("*");
+    }
+    packetCount++;
+    loopCount = 0;
+    
+    #if 1
+    if(t == EmotiBit::DataType::PPG_INFRARED){
+      maxHeart =0;
+      float b =0;
+        for (uint32_t i = 0; i < dataLen; ++i){
+         dataPoint = data[i];
+
+        //Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
+        dataPoint = highpassFilter.input(dataPoint);
+        if (dataPoint < 0) { dataPoint = 0; }
+        dataPoint = lowpassFilter.input(dataPoint);
+
+        //peakDetect = lastPD * exp(timeConst * pdTime);
+        peakDetect = lastPD * timeConst;
+        if(peakDetect < pdMin){ peakDetect = pdMin; }
+        if(dataPoint >= peakDetect){
+          peakDetect = dataPoint;
+          //pdTime = 0;
+        }
+        lastPD = peakDetect;
+        //pdTime++;
+        
+       Serial.print(dataPoint);
+       Serial.print(',');
+       Serial.println(peakDetect);
+
+        b = dataPoint / peakDetect;
+        if(b < onRatio){ b = 0;}
+        b = maxBrightness * b;
+        //Serial.println(b);
+        if (b > maxHeart){maxHeart = b;}
+        }
+      newHeartFrame = true;
+      //drawHeart(true, max );
+    }
+    
+    #endif
+    return true;
+  }
+  return false;
 }
 
 bool addPacket(EmotiBit::DataType t) {
 #ifdef DEBUG_GET_DATA
-	Serial.print("addPacket: ");
-	Serial.println((uint8_t)t);
+  Serial.print("addPacket: ");
+  Serial.println((uint8_t)t);
 #endif // DEBUG
-	float * data;
-	uint32_t timestamp;
-	size_t dataLen;
+  float * data;
+  uint32_t timestamp;
+  size_t dataLen;
 
-	dataLen = emotibit.getData(t, &data, &timestamp);
+  dataLen = emotibit.getData(t, &data, &timestamp);
 
-	if (sendData[(uint8_t)t]) {
-		return addPacket(timestamp, t, data, dataLen, printLen[(uint8_t)t]);
-	}
-	return false;
+  if (sendData[(uint8_t)t]) {
+    return addPacket(timestamp, t, data, dataLen, printLen[(uint8_t)t]);
+  }
+  return false;
 }
 
 void parseIncomingMessages() {
-	// Handle incoming messages
-	if (socketReady) {
+  // Handle incoming messages
+  if (socketReady) {
 #ifdef DEBUG_GET_DATA
-		Serial.println("parseIncomingMessages()");
+    Serial.println("parseIncomingMessages()");
 #endif // DEBUG
 #ifdef SEND_UDP
-		// if there's data available, read a packet
-		int packetSize = Udp.parsePacket();
-		if (packetSize) {
-			//Serial.print("\nIncoming packet size: ");
-			//Serial.println(packetSize);
+    // if there's data available, read a packet
+    int packetSize = Udp.parsePacket();
+    if (packetSize) {
+      //Serial.print("\nIncoming packet size: ");
+      //Serial.println(packetSize);
 
-			// read the packet into packetBufffer
-			int len = Udp.read(packetBuffer, MAX_INCOMING_PACKET_LEN);
-			if (len > 0) {
-				packetBuffer[len] = '\0';
-				receivedMessage = String(packetBuffer);
-				//Serial.println(receivedMessage);
+      // read the packet into packetBufffer
+      int len = Udp.read(packetBuffer, MAX_INCOMING_PACKET_LEN);
+      if (len > 0) {
+        packetBuffer[len] = '\0';
+        receivedMessage = String(packetBuffer);
+        //Serial.println(receivedMessage);
 
-				// Log these messages to the SD card (and send back in a return packet)
-				static uint16_t recPacketCount;
-				static String typeTag;
-				static uint16_t dataLength;
-				static uint16_t commaN;
-				static uint16_t commaN1;
-				static uint16_t dataStartChar;
-				static uint16_t dataEndChar;
-				// timestamp
-				commaN = 0;
-				commaN1 = receivedMessage.indexOf(',', commaN);
-				// packetCount
-				commaN = commaN1 + 1;
-				commaN1 = receivedMessage.indexOf(',', commaN);
-				recPacketCount = receivedMessage.substring(commaN, commaN1).toInt();
-				// dataLength
-				commaN = commaN1 + 1;
-				commaN1 = receivedMessage.indexOf(',', commaN);
-				dataLength = receivedMessage.substring(commaN, commaN1).toInt();
-				// typeTag
-				commaN = commaN1 + 1;
-				commaN1 = receivedMessage.indexOf(',', commaN);
-				typeTag = receivedMessage.substring(commaN, commaN1);
-				// protocolVersion
-				commaN = commaN1 + 1;
-				commaN1 = receivedMessage.indexOf(',', commaN);
-				// reliability
-				commaN = commaN1 + 1;
-				commaN1 = receivedMessage.indexOf(',', commaN);
-				// data payload
-				dataStartChar = commaN1 + 1;
-				//dataEndChar = receivedMessage.length() - 1;
+        // Log these messages to the SD card (and send back in a return packet)
+        static uint16_t recPacketCount;
+        static String typeTag;
+        static uint16_t dataLength;
+        static uint16_t commaN;
+        static uint16_t commaN1;
+        static uint16_t dataStartChar;
+        static uint16_t dataEndChar;
+        // timestamp
+        commaN = 0;
+        commaN1 = receivedMessage.indexOf(',', commaN);
+        // packetCount
+        commaN = commaN1 + 1;
+        commaN1 = receivedMessage.indexOf(',', commaN);
+        recPacketCount = receivedMessage.substring(commaN, commaN1).toInt();
+        // dataLength
+        commaN = commaN1 + 1;
+        commaN1 = receivedMessage.indexOf(',', commaN);
+        dataLength = receivedMessage.substring(commaN, commaN1).toInt();
+        // typeTag
+        commaN = commaN1 + 1;
+        commaN1 = receivedMessage.indexOf(',', commaN);
+        typeTag = receivedMessage.substring(commaN, commaN1);
+        // protocolVersion
+        commaN = commaN1 + 1;
+        commaN1 = receivedMessage.indexOf(',', commaN);
+        // reliability
+        commaN = commaN1 + 1;
+        commaN1 = receivedMessage.indexOf(',', commaN);
+        // data payload
+        dataStartChar = commaN1 + 1;
+        //dataEndChar = receivedMessage.length() - 1;
 
-				bool isLoggableMessage = false;
-				bool isAckableMessage = false;
-				if (typeTag.equals("HE")) { // ACK
-					if (!gotIP) {
-						remoteIp = Udp.remoteIP();
-						gotIP = true;
-					}
-					if (sendResetPacket) {
-						String tempMessage;
-						tempMessage = createPacketHeader(millis(), "RS", 0);
-						Serial.println(tempMessage);
-						outputMessage += "\n";
-						outputMessage += tempMessage;
-						packetCount++;
-						sendResetPacket = false;
-					}
-				}
-				else if (typeTag.equals("AK")) { // ACK
-					isLoggableMessage = true;
-					commaN1 = receivedMessage.indexOf(',', dataStartChar);
-					uint16_t ackPacketNumber = receivedMessage.substring(dataStartChar, commaN1).toInt();
-					//Serial.println(waitingForSyncData);
-					//Serial.println(ackPacketNumber);
-					if (waitingForSyncData == ackPacketNumber) {
-						waitingForSyncData = -1;
-					}
-				}
-				else if (typeTag.equals("TL")) { // Timestamp Local
-					isLoggableMessage = true;
-					//isAckableMessage = true;
-				}
-				else if (typeTag.equals("TU")) { // Timestamp UTC
-					isLoggableMessage = true;
-				}
-				else if (typeTag.equals("TX")) { // Timestamp UTC
-					isLoggableMessage = true;
-				}
-				else if (typeTag.equals("LM")) { // Timestamp UTC
-					isLoggableMessage = true;
-				}
-				else if (typeTag.equals("RB")) { // Recording begin
-					isLoggableMessage = true;
-					String datetimeString = receivedMessage.substring(dataStartChar, receivedMessage.length() - 1);
-					// Write the configuration info to json file
-					String infoFilename = datetimeString + "_info.json";
-					dataFile = SD.open(infoFilename, FILE_WRITE);
-					if (dataFile) {
-						if (!emotibit.printConfigInfo(dataFile, datetimeString)) {
-							Serial.println(F("Failed to write to info file"));
-						}
-						dataFile.close();
-					}
-					// Try to open the data file to be sure we can write
-					sdCardFilename = datetimeString + ".csv";
-					dataFile = SD.open(sdCardFilename, FILE_WRITE);
-					if (dataFile) {
-						sdWrite = true;
-						Serial.print("** Recording Begin: ");
-						Serial.print(sdCardFilename);
-						Serial.println(" **");
-						dataFile.close();
-						isAckableMessage = true; // only ACK if we were able to open a file
-					}
-					else {
-						Serial.println("Failed to open data file for writing");
-					}
-				}
-				else if (typeTag.equals("RE")) { // Recording end
-					isLoggableMessage = true;
-					isAckableMessage = true;
-					stopSDWrite = true;
-					Serial.println("** Recording End **");
-				}
-				else if (typeTag.equals("UN")) { // User note
-					isLoggableMessage = true;
-					isAckableMessage = true;
-				}
-				else if (typeTag.equals("MH")) { // Mode Hibernate
-					isLoggableMessage = true;
-					isAckableMessage = true;
-					startHibernate = true; // hibernate after writing data
-					hibernateBeginStart = millis();
-				}
+        bool isLoggableMessage = false;
+        bool isAckableMessage = false;
+        if (typeTag.equals("HE")) { // ACK
+          if (!gotIP) {
+            remoteIp = Udp.remoteIP();
+            gotIP = true;
+          }
+          if (sendResetPacket) {
+            String tempMessage;
+            tempMessage = createPacketHeader(millis(), "RS", 0);
+            Serial.println(tempMessage);
+            outputMessage += "\n";
+            outputMessage += tempMessage;
+            packetCount++;
+            sendResetPacket = false;
+          }
+        }
+        else if (typeTag.equals("AK")) { // ACK
+          isLoggableMessage = false;
+          commaN1 = receivedMessage.indexOf(',', dataStartChar);
+          uint16_t ackPacketNumber = receivedMessage.substring(dataStartChar, commaN1).toInt();
+          //Serial.println(waitingForSyncData);
+          //Serial.println(ackPacketNumber);
+          if (waitingForSyncData == ackPacketNumber) {
+            waitingForSyncData = -1;
+          }
+        }
+        else if (typeTag.equals("TL")) { // Timestamp Local
+          isLoggableMessage = false;
+          //isAckableMessage = true;
+        }
+        else if (typeTag.equals("TU")) { // Timestamp UTC
+          isLoggableMessage = true;
+        }
+        else if (typeTag.equals("TX")) { // Timestamp UTC
+          isLoggableMessage = true;
+        }
+        else if (typeTag.equals("LM")) { // Timestamp UTC
+          isLoggableMessage = true;
+        }
+        else if (typeTag.equals("RB")) { // Recording begin
+          isLoggableMessage = true;
+          String datetimeString = receivedMessage.substring(dataStartChar, receivedMessage.length() - 1);
+          // Write the configuration info to json file
+          String infoFilename = datetimeString + "_info.json";
+          dataFile = SD.open(infoFilename, FILE_WRITE);
+          if (dataFile) {
+            if (!emotibit.printConfigInfo(dataFile, datetimeString)) {
+              Serial.println(F("Failed to write to info file"));
+            }
+            dataFile.close();
+          }
+          // Try to open the data file to be sure we can write
+          sdCardFilename = datetimeString + ".csv";
+          dataFile = SD.open(sdCardFilename, FILE_WRITE);
+          if (dataFile) {
+            sdWrite = true;
+            Serial.print("** Recording Begin: ");
+            Serial.print(sdCardFilename);
+            Serial.println(" **");
+            dataFile.close();
+            isAckableMessage = true; // only ACK if we were able to open a file
+          }
+          else {
+            Serial.println("Failed to open data file for writing");
+          }
+        }
+        else if (typeTag.equals("RE")) { // Recording end
+          isLoggableMessage = true;
+          isAckableMessage = true;
+          stopSDWrite = true;
+          Serial.println("** Recording End **");
+        }
+        else if (typeTag.equals("UN")) { // User note
+          isLoggableMessage = true;
+          isAckableMessage = true;
+        }
+        else if (typeTag.equals("MH")) { // Mode Hibernate
+          isLoggableMessage = true;
+          isAckableMessage = true;
+          startHibernate = true; // hibernate after writing data
+          hibernateBeginStart = millis();
+        }
 
-				static String tempMessage;
-				if (isLoggableMessage) {
-					// Create message for logging to sd card
-					tempMessage = "\n";
-					tempMessage += createPacketHeader(millis(), typeTag, dataLength);
-					tempMessage += ',';
-					tempMessage += receivedMessage.substring(dataStartChar, receivedMessage.length() - 1);
-					//Serial.println("** Logable Message **");
-					Serial.print(tempMessage);
-					outputMessage += tempMessage;
-					packetCount++;
-				}
-				if (isAckableMessage) {
-					// Create ACK message
-					// ToDo: utilize separate strings for SD card writable messages vs transmit acks
-					tempMessage = "\n";
-					tempMessage += createPacketHeader(millis(), "AK", 2);
-					tempMessage += ',';
-					tempMessage += recPacketCount;
-					tempMessage += ',';
-					tempMessage += typeTag;
-					Serial.print(tempMessage);
-					outputMessage += tempMessage;
-					packetCount++;
-				}
-			}
-		}
+        static String tempMessage;
+        if (isLoggableMessage) {
+          // Create message for logging to sd card
+          tempMessage = "\n";
+          tempMessage += createPacketHeader(millis(), typeTag, dataLength);
+          tempMessage += ',';
+          tempMessage += receivedMessage.substring(dataStartChar, receivedMessage.length() - 1);
+          //Serial.println("** Logable Message **");
+          Serial.print(tempMessage);
+          outputMessage += tempMessage;
+          packetCount++;
+        }
+        if (isAckableMessage) {
+          // Create ACK message
+          // ToDo: utilize separate strings for SD card writable messages vs transmit acks
+          tempMessage = "\n";
+          tempMessage += createPacketHeader(millis(), "AK", 2);
+          tempMessage += ',';
+          tempMessage += recPacketCount;
+          tempMessage += ',';
+          tempMessage += typeTag;
+          Serial.print(tempMessage);
+          outputMessage += tempMessage;
+          packetCount++;
+        }
+      }
+    }
 #endif // SEND_UDP
 #ifdef SEND_TCP
-		String s = "";
-		if (client.available()) {
-			Serial.println(client.read());
-			//s += client.read();
-		}
+    String s = "";
+    if (client.available()) {
+      Serial.println(client.read());
+      //s += client.read();
+    }
 #endif
-	}
+  }
 
 }
 
 bool performTimestampSyncing() {
-	static String tempMessage;
-	tempMessage = "\n";
-	tempMessage += createPacketHeader(millis(), "RD", 2);
-	tempMessage += ',';
-	tempMessage += "TL";
-	tempMessage += ',';
-	tempMessage += "TU";
-	sendUdpMessage(tempMessage);
-	outputMessage += tempMessage;
-	waitingForSyncData = packetCount;
-	packetCount++;
+  static String tempMessage;
+  tempMessage = "\n";
+  tempMessage += createPacketHeader(millis(), "RD", 2);
+  tempMessage += ',';
+  tempMessage += "TL";
+  tempMessage += ',';
+  tempMessage += "TU";
+  sendUdpMessage(tempMessage);
+  outputMessage += tempMessage;
+  waitingForSyncData = packetCount;
+  packetCount++;
 
-	sendTimerStart = millis();
-	while (waitingForSyncData > 0 && millis() - sendTimerStart < SYNC_MIN_SEND_DELAY) {
-		// Wait to get an timestamp+ACK for a short period
-		//Serial.println(millis());
-		parseIncomingMessages();
-	}
+  sendTimerStart = millis();
+  while (waitingForSyncData > 0 && millis() - sendTimerStart < SYNC_MIN_SEND_DELAY) {
+    // Wait to get an timestamp+ACK for a short period
+    //Serial.println(millis());
+    parseIncomingMessages();
+  }
 }
 
 void loop() {
 #ifdef DEBUG_GET_DATA
-	Serial.println("loop()");
+  Serial.println("loop()");
 #endif // DEBUG
 
-	updateWiFi();
+  updateWiFi();
 
-	parseIncomingMessages();
-
-
-	// Check for hibernate button press
-	if (switchRead() == 0) {
-		hibernateButtonPressed = false;
-	}
-	else if (switchRead() == 1) {
-		if (hibernateButtonPressed) {
-			// hibernate button was already pressed -- check how long
-			if (!startHibernate && millis() - hibernateButtonStart > hibernateButtonDelay) {
-				// delay exceeded
-				startHibernate = true; // hibernate after writing data
-				hibernateBeginStart = millis();
-
-				// ToDo: Devise a better communication method than ACK for state changes
-				String tempMessage;
-				tempMessage = "\n";
-				tempMessage += createPacketHeader(millis(), "AK", 2);
-				tempMessage += ',';
-				tempMessage += "-1";
-				tempMessage += ',';
-				tempMessage += "MH";
-				Serial.println(tempMessage);
-				outputMessage += tempMessage;
-				packetCount++;
-			}
-		}
-		else {
-			// start timer
-			hibernateButtonPressed = true;
-			hibernateButtonStart = millis();
-		}
-	}
-
-	// Periodically request a timestamp between data dumps to assess round trip time
-	if (millis() - requestTimestampTimerStart > REQUEST_TIMESTAMP_DELAY) {
-		requestTimestampTimerStart = millis();
-		performTimestampSyncing();
-	}
-
-	// Send waiting data
-	bool newData = false;
-	if (millis() - sendTimerStart > NORMAL_MIN_SEND_DELAY) { // add a delay to batch data sending
-		sendTimerStart = millis();
-		// Create data packets
-		for (int16_t i = 0; i < (uint8_t)EmotiBit::DataType::length; i++) {
-			newData = addPacket((EmotiBit::DataType) i);
-			//if (outputMessage.length() > MAX_SEND_LEN - 100 || i == (uint8_t)EmotiBit::DataType::length - 1) {
-			//	// Send batches to avoid using too much memory
-			//	sendMessage(outputMessage);
-			//	outputMessage = "";
-			//}
-		}
-
-		sendMessage(outputMessage);
-		outputMessage = "";
-
-		// Blink the LED slowly if we're writing to the SD card
-		if (sdWrite && !ledPinBusy) {	// only change the LED if it's not busy to avoid crashes
-			ledPinBusy = true;
-			if (ledOn) {
-				pinMode(LED_BUILTIN, INPUT);
-				ledOn = false;
-			}
-			else {
-				pinMode(LED_BUILTIN, OUTPUT);
-				digitalWrite(LED_BUILTIN, HIGH);
-				ledOn = true;
-			}
-			ledPinBusy = false;
-		}
-	}
-
-	if (!newData) {
-		loopCount++;
-	}
-
-	if (startHibernate && millis() - hibernateBeginStart > hibernateBeginDelay) {
-		hibernate();
-	}
-
-	if (stopSDWrite) {
-		sdWrite = false;
-		stopSDWrite = false;
-	}
+  parseIncomingMessages();
 
 
-	//if (true && sdWrite) {
-	//	config.ssid = "garbage";
-	//	rebootWiFi(); // debugging wifi issue
-	//}
+  // Check for hibernate button press
+  if (switchRead() == 0) {
+    hibernateButtonPressed = false;
+  }
+  else if (switchRead() == 1) {
+    if (hibernateButtonPressed) {
+      // hibernate button was already pressed -- check how long
+      if (!startHibernate && millis() - hibernateButtonStart > hibernateButtonDelay) {
+        // delay exceeded
+        startHibernate = true; // hibernate after writing data
+        hibernateBeginStart = millis();
+
+        // ToDo: Devise a better communication method than ACK for state changes
+        String tempMessage;
+        tempMessage = "\n";
+        tempMessage += createPacketHeader(millis(), "AK", 2);
+        tempMessage += ',';
+        tempMessage += "-1";
+        tempMessage += ',';
+        tempMessage += "MH";
+        Serial.println(tempMessage);
+        outputMessage += tempMessage;
+        packetCount++;
+      }
+    }
+    else {
+      // start timer
+      hibernateButtonPressed = true;
+      hibernateButtonStart = millis();
+    }
+  }
+
+  // Periodically request a timestamp between data dumps to assess round trip time
+  if (millis() - requestTimestampTimerStart > REQUEST_TIMESTAMP_DELAY) {
+    requestTimestampTimerStart = millis();
+    performTimestampSyncing();
+  }
+
+  // Send waiting data
+  bool newData = false;
+  if (millis() - sendTimerStart > NORMAL_MIN_SEND_DELAY) { // add a delay to batch data sending
+    sendTimerStart = millis();
+    // Create data packets
+    for (int16_t i = 0; i < (uint8_t)EmotiBit::DataType::length; i++) {
+      newData = addPacket((EmotiBit::DataType) i);
+      //if (outputMessage.length() > MAX_SEND_LEN - 100 || i == (uint8_t)EmotiBit::DataType::length - 1) {
+      //  // Send batches to avoid using too much memory
+      //  sendMessage(outputMessage);
+      //  outputMessage = "";
+      //}
+    }
+
+    sendMessage(outputMessage);
+    outputMessage = "";
+
+    // Blink the LED slowly if we're writing to the SD card
+    if (sdWrite && !ledPinBusy) { // only change the LED if it's not busy to avoid crashes
+      ledPinBusy = true;
+      if (ledOn) {
+        pinMode(LED_BUILTIN, INPUT);
+        ledOn = false;
+      }
+      else {
+        pinMode(LED_BUILTIN, OUTPUT);
+        digitalWrite(LED_BUILTIN, HIGH);
+        ledOn = true;
+      }
+      ledPinBusy = false;
+    }
+  }
+
+  if (!newData) {
+    loopCount++;
+  }
+
+  if (startHibernate && millis() - hibernateBeginStart > hibernateBeginDelay) {
+    hibernate();
+  }
+
+  if (stopSDWrite) {
+    sdWrite = false;
+    stopSDWrite = false;
+  }
+
+
+  //if (true && sdWrite) {
+  //  config.ssid = "garbage";
+  //  rebootWiFi(); // debugging wifi issue
+  //}
+
+#if 0
+  charlieLen = emotibit.readData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
+  if (charlieLen > 0){
+    float max =0;
+    float b =0;
+      for (uint32_t i = 0; i < charlieLen; ++i)
+      {
+        dataPoint = ppgData[i];
+          Serial.println(dataPoint);
+      //Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
+      dataPoint = highpassFilter.input(dataPoint);
+      if (dataPoint < 0) { dataPoint = 0; }
+      dataPoint = lowpassFilter.input(dataPoint);
+
+      peakDetect = lastPD * exp(timeConst * t);
+      if(peakDetect <1){ peakDetect = 1; }
+      if(dataPoint >= peakDetect){
+        peakDetect = dataPoint;
+        t = 0;
+      }
+      lastPD = peakDetect;
+      t++;
+      
+      b = 15* dataPoint / peakDetect;
+      //Serial.println(dataPoint);
+      max+=b;
+      //if (b > max){max = b;}
+      }
+      //clearToDraw = true;
+    //drawHeart(true, max );
+    //Serial.println(max/charlieLen);
+    //Serial.print(',');
+    //Serial.println(peakDetect);
+  }
+#endif
+
 }
 
 void readSensors() {
 #ifdef DEBUG_GET_DATA
-	Serial.println("readSensors()");
+  Serial.println("readSensors()");
 #endif // DEBUG
 
-	// ToDo: Move readSensors and timer into EmotiBit
+  // ToDo: Move readSensors and timer into EmotiBit
 
-	// EDA
-	if (acquireData.eda) {
-		static uint16_t edaCounter;
-		if (edaCounter == EDA_SAMPLING_DIV) {
-			int8_t tempStatus = emotibit.updateEDAData();
-			//if (dataStatus.eda == 0) {
-			//	dataStatus.eda = tempStatus;
-			//}
-			edaCounter = 0;
-		}
-		edaCounter++;
-	}
+  // EDA
+  if (acquireData.eda) {
+    static uint16_t edaCounter;
+    if (edaCounter == EDA_SAMPLING_DIV) {
+      int8_t tempStatus = emotibit.updateEDAData();
+      //if (dataStatus.eda == 0) {
+      //  dataStatus.eda = tempStatus;
+      //}
+      edaCounter = 0;
+    }
+    edaCounter++;
+  }
 
-	// Temperature / Humidity Sensor
-	if (acquireData.tempHumidity) {
-		static uint16_t temperatureCounter;
-		if (temperatureCounter == TEMPERATURE_SAMPLING_DIV) {
-			// Note: Temperature/humidity and the thermistor are alternately sampled 
-			// on every other call of updateTempHumidityData()
-			// I.e. you must call updateTempHumidityData() 2x with a sufficient measurement 
-			// delay between calls to sample both temperature/humidity and the thermistor
-			int8_t tempStatus = emotibit.updateTempHumidityData();
-			//if (dataStatus.tempHumidity == 0) {
-			//	dataStatus.tempHumidity = tempStatus;
-			//}
-			temperatureCounter = 0;
+  // Temperature / Humidity Sensor
+  if (acquireData.tempHumidity) {
+    static uint16_t temperatureCounter;
+    if (temperatureCounter == TEMPERATURE_SAMPLING_DIV) {
+      // Note: Temperature/humidity and the thermistor are alternately sampled 
+      // on every other call of updateTempHumidityData()
+      // I.e. you must call updateTempHumidityData() 2x with a sufficient measurement 
+      // delay between calls to sample both temperature/humidity and the thermistor
+      int8_t tempStatus = emotibit.updateTempHumidityData();
+      //if (dataStatus.tempHumidity == 0) {
+      //  dataStatus.tempHumidity = tempStatus;
+      //}
+      temperatureCounter = 0;
 
-			if (!sdWrite) {	// If we're not recording, blink quickly
-				if (!ledPinBusy) {	// only change the LED if it's not busy to avoid crashes
-					ledPinBusy = true;
-					if (ledOn) {
-						pinMode(LED_BUILTIN, INPUT);
-						ledOn = false;
-					}
-					else {
-						pinMode(LED_BUILTIN, OUTPUT);
-						digitalWrite(LED_BUILTIN, HIGH);
-						ledOn = true;
-					}
-					ledPinBusy = false;
-				}
-			}
-		}
-		temperatureCounter++;
-	}
+      if (!sdWrite) { // If we're not recording, blink quickly
+        if (!ledPinBusy) {  // only change the LED if it's not busy to avoid crashes
+          ledPinBusy = true;
+          if (ledOn) {
+            pinMode(LED_BUILTIN, INPUT);
+            ledOn = false;
+          }
+          else {
+            pinMode(LED_BUILTIN, OUTPUT);
+            digitalWrite(LED_BUILTIN, HIGH);
+            ledOn = true;
+          }
+          ledPinBusy = false;
+        }
+      }
+    }
+    temperatureCounter++;
+  }
 
-	// IMU
-	if (acquireData.imu) {
-		int8_t tempStatus = emotibit.updateIMUData();
-		//if (dataStatus.imu == 0) {
-		//	dataStatus.imu = tempStatus;
-		//}
-	}
+  // IMU
+  if (acquireData.imu) {
+    int8_t tempStatus = emotibit.updateIMUData();
+    //if (dataStatus.imu == 0) {
+    //  dataStatus.imu = tempStatus;
+    //}
+  }
 
-	// PPG
-	if (acquireData.ppg) {
-		int8_t tempStatus = emotibit.updatePPGData();
-		//if (dataStatus.ppg == 0) {
-		//	dataStatus.ppg = tempStatus;
-		//}
-	}
+  // PPG
+  if (acquireData.ppg) {
+    int8_t tempStatus = emotibit.updatePPGData();
+    //if (dataStatus.ppg == 0) {
+    //  dataStatus.ppg = tempStatus;
+    //}
+  }
 
-	// Battery (all analog reads must be in the ISR)
-	static uint16_t batteryCounter;
-	if (batteryCounter > BATTERY_SAMPLING_DIV) {
-		emotibit.updateBatteryPercentData();
-		batteryCounter = 0;
-	}
-	batteryCounter++;
+  // Battery (all analog reads must be in the ISR)
+  static uint16_t batteryCounter;
+  if (batteryCounter > BATTERY_SAMPLING_DIV) {
+    emotibit.updateBatteryPercentData();
+    batteryCounter = 0;
+  }
+  batteryCounter++;
 
-#if 1
-	static uint16_t charlieCounter;
-	if (charlieCounter > CHARLIE_SAMPLING_DIV) {
-		charlieLen = emotibit.readData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
+  if (newHeartFrame){
+    drawHeart(true, maxHeart);
+    //Serial.println(maxHeart);
+    newHeartFrame = false;
+  }
 
-		if ((charlieLen > 0)&&(charlieLen != lastSize)) {
-			//Serial.print("Charlie Start: ");
-			starttime = millis();
-			//Serial.println(starttime);
-			//Serial.println(charlieLen);
-				dataPoint = ppgData[charlieLen-1];
-				//Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
-				dataPoint = highpassFilter.input(dataPoint);
-				dataPoint /= atten;
-				if (dataPoint < 0) { dataPoint = 0; }
-				dataPoint = lowpassFilter.input(dataPoint);
-				drawHeart(true, dataPoint);
-				Serial.println(dataPoint);
-			}
-			//Serial.print("Charlie Duration: ");
-			//Serial.println(millis() - starttime);  //Less than 1 ms
-			charlieCounter = 0;
-			lastSize =charlieLen;
-		}
-	charlieCounter++;
+#if 0
+  static uint16_t charlieCounter;
+  if (charlieCounter > CHARLIE_SAMPLING_DIV) {
+    starttime = millis();
+    charlieLen = emotibit.readData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
+   
+    if ((charlieLen > 0)&&(charlieLen != lastSize)) {
+      //starttime = millis();
+      //Serial.println(starttime);
+      //Serial.println(charlieLen);
+
+      dataPoint = ppgData[charlieLen-1];
+
+      //Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
+      dataPoint = highpassFilter.input(dataPoint);
+      if (dataPoint < 0) { dataPoint = 0; }
+      dataPoint = lowpassFilter.input(dataPoint);
+     
+      peakDetect = lastPD * exp(timeConst * t);
+      if(peakDetect <1){ peakDetect = 1; }
+      if(dataPoint >= peakDetect){
+        peakDetect = dataPoint;
+        t = 0;
+      }
+      lastPD = peakDetect;
+      t++;
+      
+      drawHeart(true, 15 * dataPoint / peakDetect);
+      //Serial.println(15 * dataPoint / peakDetect);
+      //Serial.print(',');
+      //Serial.println(peakDetect);
+      //Serial.print("Charlie Duration: ");
+      //Serial.println(millis() - starttime);  //Less than 1 ms
+      lastSize = charlieLen;
+    }
+    charlieCounter = 0;
+    Serial.println(millis() - starttime);
+  }
+  charlieCounter++;
 #endif
 }
 
 
 void setTimerFrequency(int frequencyHz) {
-	int compareValue = (CPU_HZ / (TIMER_PRESCALER_DIV * frequencyHz)) - 1;
-	TcCount16* TC = (TcCount16*)TC3;
-	// Make sure the count is in a proportional position to where it was
-	// to prevent any jitter or disconnect when changing the compare value.
-	TC->COUNT.reg = map(TC->COUNT.reg, 0, TC->CC[0].reg, 0, compareValue);
-	TC->CC[0].reg = compareValue;
-	//Serial.println(TC->COUNT.reg);
-	//Serial.println(TC->CC[0].reg);
-	while (TC->STATUS.bit.SYNCBUSY == 1);
+  int compareValue = (CPU_HZ / (TIMER_PRESCALER_DIV * frequencyHz)) - 1;
+  TcCount16* TC = (TcCount16*)TC3;
+  // Make sure the count is in a proportional position to where it was
+  // to prevent any jitter or disconnect when changing the compare value.
+  TC->COUNT.reg = map(TC->COUNT.reg, 0, TC->CC[0].reg, 0, compareValue);
+  TC->CC[0].reg = compareValue;
+  //Serial.println(TC->COUNT.reg);
+  //Serial.println(TC->CC[0].reg);
+  while (TC->STATUS.bit.SYNCBUSY == 1);
 }
 
 void startTimer(int frequencyHz) {
-	REG_GCLK_CLKCTRL = (uint16_t)(GCLK_CLKCTRL_CLKEN | GCLK_CLKCTRL_GEN_GCLK0 | GCLK_CLKCTRL_ID_TCC2_TC3);
-	while (GCLK->STATUS.bit.SYNCBUSY == 1); // wait for sync
+  REG_GCLK_CLKCTRL = (uint16_t)(GCLK_CLKCTRL_CLKEN | GCLK_CLKCTRL_GEN_GCLK0 | GCLK_CLKCTRL_ID_TCC2_TC3);
+  while (GCLK->STATUS.bit.SYNCBUSY == 1); // wait for sync
 
-	TcCount16* TC = (TcCount16*)TC3;
+  TcCount16* TC = (TcCount16*)TC3;
 
-	TC->CTRLA.reg &= ~TC_CTRLA_ENABLE;
-	while (TC->STATUS.bit.SYNCBUSY == 1); // wait for sync
+  TC->CTRLA.reg &= ~TC_CTRLA_ENABLE;
+  while (TC->STATUS.bit.SYNCBUSY == 1); // wait for sync
 
-																				// Use the 16-bit timer
-	TC->CTRLA.reg |= TC_CTRLA_MODE_COUNT16;
-	while (TC->STATUS.bit.SYNCBUSY == 1); // wait for sync
+                                        // Use the 16-bit timer
+  TC->CTRLA.reg |= TC_CTRLA_MODE_COUNT16;
+  while (TC->STATUS.bit.SYNCBUSY == 1); // wait for sync
 
-																				// Use match mode so that the timer counter resets when the count matches the compare register
-	TC->CTRLA.reg |= TC_CTRLA_WAVEGEN_MFRQ;
-	while (TC->STATUS.bit.SYNCBUSY == 1); // wait for sync
+                                        // Use match mode so that the timer counter resets when the count matches the compare register
+  TC->CTRLA.reg |= TC_CTRLA_WAVEGEN_MFRQ;
+  while (TC->STATUS.bit.SYNCBUSY == 1); // wait for sync
 
-																				// Set prescaler to 1024
-	TC->CTRLA.reg |= TC_CTRLA_PRESCALER_DIV1024;
-	while (TC->STATUS.bit.SYNCBUSY == 1); // wait for sync
+                                        // Set prescaler to 1024
+  TC->CTRLA.reg |= TC_CTRLA_PRESCALER_DIV1024;
+  while (TC->STATUS.bit.SYNCBUSY == 1); // wait for sync
 
-	setTimerFrequency(frequencyHz);
+  setTimerFrequency(frequencyHz);
 
-	// Enable the compare interrupt
-	TC->INTENSET.reg = 0;
-	TC->INTENSET.bit.MC0 = 1;
+  // Enable the compare interrupt
+  TC->INTENSET.reg = 0;
+  TC->INTENSET.bit.MC0 = 1;
 
-	NVIC_EnableIRQ(TC3_IRQn);
+  NVIC_EnableIRQ(TC3_IRQn);
 
-	TC->CTRLA.reg |= TC_CTRLA_ENABLE;
-	while (TC->STATUS.bit.SYNCBUSY == 1); // wait for sync
+  TC->CTRLA.reg |= TC_CTRLA_ENABLE;
+  while (TC->STATUS.bit.SYNCBUSY == 1); // wait for sync
 }
 
 void stopTimer() {
-	// ToDo: Verify implementation
-	TcCount16* TC = (TcCount16*)TC3;
-	TC->CTRLA.reg &= ~TC_CTRLA_ENABLE;
+  // ToDo: Verify implementation
+  TcCount16* TC = (TcCount16*)TC3;
+  TC->CTRLA.reg &= ~TC_CTRLA_ENABLE;
 }
 
 void TC3_Handler() {
-	TcCount16* TC = (TcCount16*)TC3;
-	// If this interrupt is due to the compare register matching the timer count
-	// we toggle the LED.
-	if (TC->INTFLAG.bit.MC0 == 1) {
-		TC->INTFLAG.bit.MC0 = 1;
-		//emotibit.scopeTimingTest();
-		// Write callback here!!!
-		readSensors();
+  TcCount16* TC = (TcCount16*)TC3;
+  // If this interrupt is due to the compare register matching the timer count
+  // we toggle the LED.
+  if (TC->INTFLAG.bit.MC0 == 1) {
+    TC->INTFLAG.bit.MC0 = 1;
+    //emotibit.scopeTimingTest();
+    // Write callback here!!!
+    readSensors();
 
-	}
+  }
 }
 
 
 
 void printWiFiStatus() {
 #ifdef SEND_UDP || SEND_TCP
-	// print the SSID of the network you're attached to:
-	Serial.print("SSID: ");
-	Serial.println(WiFi.SSID());
+  // print the SSID of the network you're attached to:
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
 
-	// print your WiFi shield's IP address:
-	IPAddress ip = WiFi.localIP();
-	Serial.print("IP Address: ");
-	Serial.println(ip);
+  // print your WiFi shield's IP address:
+  IPAddress ip = WiFi.localIP();
+  Serial.print("IP Address: ");
+  Serial.println(ip);
 
-	// print the received signal strength:
-	long rssi = WiFi.RSSI();
-	Serial.print("signal strength (RSSI):");
-	Serial.print(rssi);
-	Serial.println(" dBm");
+  // print the received signal strength:
+  long rssi = WiFi.RSSI();
+  Serial.print("signal strength (RSSI):");
+  Serial.print(rssi);
+  Serial.println(" dBm");
 #endif
 }
 
 //extern "C" char *sbrk(int i);
 //
 //int FreeRam() {
-//	char stack_dummy = 0;
-//	return &stack_dummy - sbrk(0);
+//  char stack_dummy = 0;
+//  return &stack_dummy - sbrk(0);
 //}
 
 void hibernate() {
-	stopTimer();
+  stopTimer();
 
-	emotibit.ppgSensor.shutDown();
-	if (wifiStatus == WL_CONNECTED) {
-		WiFi.disconnect();
-	}
-	WiFi.end();
+  emotibit.ppgSensor.shutDown();
+  if (wifiStatus == WL_CONNECTED) {
+    WiFi.disconnect();
+  }
+  WiFi.end();
 
-	while (ledPinBusy)
-		pinMode(LED_BUILTIN, OUTPUT);
+  while (ledPinBusy)
+    pinMode(LED_BUILTIN, OUTPUT);
 
-	// ToDo: 
-	//	Shutdown IMU
-	//	Consider more low level power management
+  // ToDo: 
+  //  Shutdown IMU
+  //  Consider more low level power management
 
-	while (true) {
+  while (true) {
 
-		digitalWrite(LED_BUILTIN, LOW); // Show we're asleep
-		int sleepMS = Watchdog.sleep();
-		digitalWrite(LED_BUILTIN, HIGH); // Show we're awake again
-		delay(1);
+    digitalWrite(LED_BUILTIN, LOW); // Show we're asleep
+    int sleepMS = Watchdog.sleep();
+    digitalWrite(LED_BUILTIN, HIGH); // Show we're awake again
+    delay(1);
 
-		//	// Log the battery voltage to the SD card
-		//	if (SD.begin(emotibit._sdCardChipSelectPin)) {
-		//		dataFile = SD.open("HibernateBatteryLog.csv", FILE_WRITE);
-		//		if (dataFile) {
-		//			static float data;
-		//			static EmotiBit::DataType t = EmotiBit::DataType::BATTERY_VOLTAGE;
+    //  // Log the battery voltage to the SD card
+    //  if (SD.begin(emotibit._sdCardChipSelectPin)) {
+    //    dataFile = SD.open("HibernateBatteryLog.csv", FILE_WRITE);
+    //    if (dataFile) {
+    //      static float data;
+    //      static EmotiBit::DataType t = EmotiBit::DataType::BATTERY_VOLTAGE;
 
-		//			data = emotibit.readBatteryVoltage();
+    //      data = emotibit.readBatteryVoltage();
 
-		//			static String message;
-		//			message = "";
-		//			message += createPacketHeader(millis(), typeTags[(uint8_t)t], 1);
-		//			message += ",";
-		//			message += String(data, printLen[(uint8_t)t]);
-		//			message += "\n";
-		//			packetCount++;
-		//			dataFile.print(message);
-		//			dataFile.close();
-		//		}
-		//}
+    //      static String message;
+    //      message = "";
+    //      message += createPacketHeader(millis(), typeTags[(uint8_t)t], 1);
+    //      message += ",";
+    //      message += String(data, printLen[(uint8_t)t]);
+    //      message += "\n";
+    //      packetCount++;
+    //      dataFile.print(message);
+    //      dataFile.close();
+    //    }
+    //}
 
-		// Try to reattach USB connection on "native USB" boards (connection is
-		// lost on sleep). Host will also need to reattach to the Serial monitor.
-		// Seems not entirely reliable, hence the LED indicator fallback.
+    // Try to reattach USB connection on "native USB" boards (connection is
+    // lost on sleep). Host will also need to reattach to the Serial monitor.
+    // Seems not entirely reliable, hence the LED indicator fallback.
 //#ifdef USBCON
-//		USBDevice.attach();
+//    USBDevice.attach();
 //#endif
-	}
+  }
 
-	//sleepmgr_sleep(SLEEPMGR_STANDBY);
+  //sleepmgr_sleep(SLEEPMGR_STANDBY);
 
-	//// Set sleep to full power down.  Only external interrupts or
-	//// the watchdog timer can wake the CPU!
-	//	set_sleep_mode(SLEEP_MODE_PWR_DOWN); 
-	//	power_all_disable();	// disable all functions
-	//	sleep_bod_disable(); // disable brown out detect to lower power consumption
-	//	// Enable sleep and enter sleep mode.
-	//	sleep_mode();
+  //// Set sleep to full power down.  Only external interrupts or
+  //// the watchdog timer can wake the CPU!
+  //  set_sleep_mode(SLEEP_MODE_PWR_DOWN); 
+  //  power_all_disable();  // disable all functions
+  //  sleep_bod_disable(); // disable brown out detect to lower power consumption
+  //  // Enable sleep and enter sleep mode.
+  //  sleep_mode();
 
 
 }
 
 int8_t switchRead() {
-	// ToDo: Consider reading pin mode https://arduino.stackexchange.com/questions/13165/how-to-read-pinmode-for-digital-pin
+  // ToDo: Consider reading pin mode https://arduino.stackexchange.com/questions/13165/how-to-read-pinmode-for-digital-pin
 
-	if (LED_BUILTIN == emotibit.switchPin) {
-		if (ledPinBusy) {
-			return -1;
-		}
-		else {
-			ledPinBusy = true;
-			pinMode(LED_BUILTIN, INPUT);
-			int8_t switchState = (int8_t)digitalRead(emotibit.switchPin);
-			if (ledOn) {
-				pinMode(LED_BUILTIN, OUTPUT);
-				digitalWrite(LED_BUILTIN, HIGH);
-			}
-			ledPinBusy = false;
-			return switchState;
-		}
-	}
-	else {
-		pinMode(LED_BUILTIN, INPUT);
-		return (int8_t)digitalRead(emotibit.switchPin);
-	}
+  if (LED_BUILTIN == emotibit.switchPin) {
+    if (ledPinBusy) {
+      return -1;
+    }
+    else {
+      ledPinBusy = true;
+      pinMode(LED_BUILTIN, INPUT);
+      int8_t switchState = (int8_t)digitalRead(emotibit.switchPin);
+      if (ledOn) {
+        pinMode(LED_BUILTIN, OUTPUT);
+        digitalWrite(LED_BUILTIN, HIGH);
+      }
+      ledPinBusy = false;
+      return switchState;
+    }
+  }
+  else {
+    pinMode(LED_BUILTIN, INPUT);
+    return (int8_t)digitalRead(emotibit.switchPin);
+  }
 }
 
 // Loads the configuration from a file
 bool loadConfigFile(String filename) {
-	// Open file for reading
-	File file = SD.open(filename);
+  // Open file for reading
+  File file = SD.open(filename);
 
-	if (!file) {
-		Serial.print("File ");
-		Serial.print(filename);
-		Serial.println(" not found");
-		return false;
-	}
+  if (!file) {
+    Serial.print("File ");
+    Serial.print(filename);
+    Serial.println(" not found");
+    return false;
+  }
 
-	Serial.print("Parsing: ");
-	Serial.println(filename);
+  Serial.print("Parsing: ");
+  Serial.println(filename);
 
-	// Allocate the memory pool on the stack.
-	// Don't forget to change the capacity to match your JSON document.
-	// Use arduinojson.org/assistant to compute the capacity.
-	//StaticJsonBuffer<1024> jsonBuffer;
-	StaticJsonBuffer<1024> jsonBuffer;
+  // Allocate the memory pool on the stack.
+  // Don't forget to change the capacity to match your JSON document.
+  // Use arduinojson.org/assistant to compute the capacity.
+  //StaticJsonBuffer<1024> jsonBuffer;
+  StaticJsonBuffer<1024> jsonBuffer;
 
-	// Parse the root object
-	JsonObject &root = jsonBuffer.parseObject(file);
+  // Parse the root object
+  JsonObject &root = jsonBuffer.parseObject(file);
 
-	if (!root.success()) {
-		Serial.println(F("Failed to parse config file"));
-		return false;
-	}
+  if (!root.success()) {
+    Serial.println(F("Failed to parse config file"));
+    return false;
+  }
 
-	// Copy values from the JsonObject to the Config
-	configSize = root.get<JsonVariant>("WifiCredentials").as<JsonArray>().size();
-	Serial.print("ConfigSize: ");
-	Serial.println(configSize);
-	for (size_t i = 0; i < configSize; i++) {
-		configList[i].ssid = root["WifiCredentials"][i]["ssid"] | "";
-		configList[i].password = root["WifiCredentials"][i]["password"] | "";
-		Serial.println(configList[i].ssid);
-		Serial.println(configList[i].password);
-	}
+  // Copy values from the JsonObject to the Config
+  configSize = root.get<JsonVariant>("WifiCredentials").as<JsonArray>().size();
+  Serial.print("ConfigSize: ");
+  Serial.println(configSize);
+  for (size_t i = 0; i < configSize; i++) {
+    configList[i].ssid = root["WifiCredentials"][i]["ssid"] | "";
+    configList[i].password = root["WifiCredentials"][i]["password"] | "";
+    Serial.println(configList[i].ssid);
+    Serial.println(configList[i].password);
+  }
 
-	//strlcpy(config.hostname,                   // <- destination
-	//	root["hostname"] | "example.com",  // <- source
-	//	sizeof(config.hostname));          // <- destination's capacity
+  //strlcpy(config.hostname,                   // <- destination
+  //  root["hostname"] | "example.com",  // <- source
+  //  sizeof(config.hostname));          // <- destination's capacity
 
-	// Close the file (File's destructor doesn't close the file)
-	// ToDo: Handle multiple credentials
+  // Close the file (File's destructor doesn't close the file)
+  // ToDo: Handle multiple credentials
 
-	file.close();
-	return true;
+  file.close();
+  return true;
 }
 
 bool sendSdCardMessage(String & s) {
-	// Break up the message in to bite-size chunks to avoid over running the UDP or SD card write buffers
-	// UDP buffer seems to be about 1400 char. SD card buffer seems to be about 2500 char.
-	if (sdWrite && s.length() > 0) {
-		dataFile = SD.open(sdCardFilename, FILE_WRITE);
-		if (dataFile) {
-			static int16_t firstIndex;
-			firstIndex = 0;
-			while (firstIndex < s.length()) {
-				static int16_t lastIndex;
-				if (s.length() - firstIndex > MAX_SD_WRITE_LEN) {
-					lastIndex = firstIndex + MAX_SD_WRITE_LEN;
-				}
-				else {
-					lastIndex = s.length();
-				}
+  // Break up the message in to bite-size chunks to avoid over running the UDP or SD card write buffers
+  // UDP buffer seems to be about 1400 char. SD card buffer seems to be about 2500 char.
+  if (sdWrite && s.length() > 0) {
+    dataFile = SD.open(sdCardFilename, FILE_WRITE);
+    if (dataFile) {
+      static int16_t firstIndex;
+      firstIndex = 0;
+      while (firstIndex < s.length()) {
+        static int16_t lastIndex;
+        if (s.length() - firstIndex > MAX_SD_WRITE_LEN) {
+          lastIndex = firstIndex + MAX_SD_WRITE_LEN;
+        }
+        else {
+          lastIndex = s.length();
+        }
 
-				////Serial.println(firstIndex);
-				//static int16_t lastIndex;
-				//lastIndex = s.length();
-				//while (lastIndex - firstIndex > MAX_SD_WRITE_LEN) {
-				//	lastIndex = s.lastIndexOf('\n', lastIndex - 1);
-				//	//Serial.println(lastIndex);
-				//}
-				////Serial.println(outputMessage.substring(firstIndex, lastIndex));
+        ////Serial.println(firstIndex);
+        //static int16_t lastIndex;
+        //lastIndex = s.length();
+        //while (lastIndex - firstIndex > MAX_SD_WRITE_LEN) {
+        //  lastIndex = s.lastIndexOf('\n', lastIndex - 1);
+        //  //Serial.println(lastIndex);
+        //}
+        ////Serial.println(outputMessage.substring(firstIndex, lastIndex));
 
 #ifdef DEBUG_GET_DATA
-				Serial.println("writing to SD card");
+        Serial.println("writing to SD card");
 #endif // DEBUG
-				//sdCardFilename = "DATALOGLOGLOG.CSV";
+        //sdCardFilename = "DATALOGLOGLOG.CSV";
 
-				dataFile.print(s.substring(firstIndex, lastIndex));
-				firstIndex = lastIndex;
+        dataFile.print(s.substring(firstIndex, lastIndex));
+        firstIndex = lastIndex;
 
-				//dataFile.flush();
-				//firstIndex = lastIndex + 1;	// increment substring indexes for breaking up sends
-			}
-			dataFile.close();
-		}
-		else {
-			Serial.print("Data file didn't open properly: ");
-			Serial.println(sdCardFilename);
-			sdWrite = false;
-		}
-	}
+        //dataFile.flush();
+        //firstIndex = lastIndex + 1; // increment substring indexes for breaking up sends
+      }
+      dataFile.close();
+    }
+    else {
+      Serial.print("Data file didn't open properly: ");
+      Serial.println(sdCardFilename);
+      sdWrite = false;
+    }
+  }
 }
 
 bool sendUdpMessage(String & s) {
-	if (wifiReady && socketReady) {
+  if (wifiReady && socketReady) {
 
-		// Break up the message in to bite-size chunks to avoid over running the UDP or SD card write buffers
-		// UDP buffer seems to be about 1400 char. SD card buffer seems to be about 2500 char.
-		static int16_t firstIndex;
-		firstIndex = 0;
-		while (firstIndex < s.length()) {
-			//Serial.println(firstIndex);
-			static int16_t lastIndex;
-			lastIndex = s.length();
-			while (lastIndex - firstIndex > MAX_SEND_LEN) {
-				lastIndex = s.lastIndexOf('\n', lastIndex - 1);
-				//Serial.println(lastIndex);
-			}
-			//Serial.println(outputMessage.substring(firstIndex, lastIndex));
+    // Break up the message in to bite-size chunks to avoid over running the UDP or SD card write buffers
+    // UDP buffer seems to be about 1400 char. SD card buffer seems to be about 2500 char.
+    static int16_t firstIndex;
+    firstIndex = 0;
+    while (firstIndex < s.length()) {
+      //Serial.println(firstIndex);
+      static int16_t lastIndex;
+      lastIndex = s.length();
+      while (lastIndex - firstIndex > MAX_SEND_LEN) {
+        lastIndex = s.lastIndexOf('\n', lastIndex - 1);
+        //Serial.println(lastIndex);
+      }
+      //Serial.println(outputMessage.substring(firstIndex, lastIndex));
 
-		// UDP sending
-			if (socketReady && gotIP) {
+    // UDP sending
+      if (socketReady && gotIP) {
 #ifdef DEBUG_GET_DATA
-				Serial.println("sending UDP");
+        Serial.println("sending UDP");
 #endif // DEBUG
-				for (uint8_t n = 0; n < nUDPSends; n++) {
-					//Udp.beginPacket(remoteIp, localPort);
-					Udp.beginPacket(remoteIp, Udp.remotePort());
-					Udp.print(s.substring(firstIndex, lastIndex));
-					Udp.endPacket();
-					wifiRebootCounter++;
-				}
-			}
-			firstIndex = lastIndex + 1;	// increment substring indexes for breaking up sends
-		}
-	}
+        for (uint8_t n = 0; n < nUDPSends; n++) {
+          //Udp.beginPacket(remoteIp, localPort);
+          Udp.beginPacket(remoteIp, Udp.remotePort());
+          Udp.print(s.substring(firstIndex, lastIndex));
+          Udp.endPacket();
+          wifiRebootCounter++;
+        }
+      }
+      firstIndex = lastIndex + 1; // increment substring indexes for breaking up sends
+    }
+  }
 }
 
 bool sendMessage(String & s) {
 
-	// Serial sending
-	if (sendSerial) {
+  // Serial sending
+  if (sendSerial) {
 #ifdef DEBUG_GET_DATA
-		Serial.println("sending serial");
+    Serial.println("sending serial");
 #endif // DEBUG
-		Serial.print(s);
-	}
+    Serial.print(s);
+  }
 
 #ifdef SEND_TCP
-	if (socketReady) {
+  if (socketReady) {
 #ifdef DEBUG_GET_DATA
-		// ToDo: Determine if TCP packets need to be broken up similarly to UDP
-		Serial.println("sending TCP");
+    // ToDo: Determine if TCP packets need to be broken up similarly to UDP
+    Serial.println("sending TCP");
 #endif // DEBUG
-		client.print(s.substring(firstIndex, lastIndex));
-	}
+    client.print(s.substring(firstIndex, lastIndex));
+  }
 #endif // SEND_UDP
 #ifdef SEND_UDP
-	sendUdpMessage(s);
-#endif // SEND_UDP	
-	// Write to SD card after sending network messages
-	// This give the receiving computer time to process in advance of a sync exchange
-	sendSdCardMessage(s);
+  sendUdpMessage(s);
+#endif // SEND_UDP  
+  // Write to SD card after sending network messages
+  // This give the receiving computer time to process in advance of a sync exchange
+  sendSdCardMessage(s);
 }
 
 void updateWiFi() {
-	wifiStatus = WiFi.status();
-	if (wifiStatus != WL_CONNECTED) {
-		wifiReady = false;
-		socketReady = false;
-	}
+  wifiStatus = WiFi.status();
+  if (wifiStatus != WL_CONNECTED) {
+    wifiReady = false;
+    socketReady = false;
+  }
 #if 0
-	//Serial.println("<<<<<<< updateWiFi >>>>>>>");
-	Serial.println("------- WiFi Status -------");
-	Serial.println(millis());
-	Serial.println(wifiStatus);
-	//Serial.println(wifiRebootCounter);    /* Uncommment for WiFi Debugging*/
-	Serial.println(millis());
-	Serial.println("-------  -------");
+  //Serial.println("<<<<<<< updateWiFi >>>>>>>");
+  Serial.println("------- WiFi Status -------");
+  Serial.println(millis());
+  Serial.println(wifiStatus);
+  //Serial.println(wifiRebootCounter);    /* Uncommment for WiFi Debugging*/
+  Serial.println(millis());
+  Serial.println("-------  -------");
 #endif
 
-	// Handle Wifi Reboot
-	if (wifiReady && wifiRebootCounter > wifiRebootTarget) {
-		rebootWiFi();
-	}
+  // Handle Wifi Reboot
+  if (wifiReady && wifiRebootCounter > wifiRebootTarget) {
+    rebootWiFi();
+  }
 
-	// Handle WiFi Reconnects
-	if (!wifiReady) {
-		if (getMomentLost) {
-			momentLost = millis();
-			getMomentLost = false;
-		}
+  // Handle WiFi Reconnects
+  if (!wifiReady) {
+    if (getMomentLost) {
+      momentLost = millis();
+      getMomentLost = false;
+    }
 
-		if (millis() - networkBeginStart > WIFI_BEGIN_ATTEMPT_DELAY) {
-			if ((millis() - momentLost > WIFI_BEGIN_SWITCH_CRED) && (attempts >= 2)) {
-				switchCred = true;
-				attempts = 0;
-			}
-			else { switchCred = false; }
+    if (millis() - networkBeginStart > WIFI_BEGIN_ATTEMPT_DELAY) {
+      if ((millis() - momentLost > WIFI_BEGIN_SWITCH_CRED) && (attempts >= 2)) {
+        switchCred = true;
+        attempts = 0;
+      }
+      else { switchCred = false; }
 
-			if (switchCred && (configPos != configSize - 1)) { configPos++; }
-			else if (switchCred && (configPos == configSize - 1)) { configPos = 0; }
-			Serial.println("<<<<<<< Wifi begin >>>>>>>");
-			Serial.println(millis());
-			Serial.println(WIFI_BEGIN_ATTEMPT_DELAY);
-			Serial.println(wifiRebootCounter);
-			Serial.println(wifiRebootTarget);
-			//Serial.println(momentLost);               //uncomment for debugging
-			Serial.println(configList[configPos].ssid);
-			wifiStatus = WiFi.begin(configList[configPos].ssid, configList[configPos].password);
-			attempts++;
-			networkBeginStart = millis();
-			Serial.println(networkBeginStart);
-			Serial.println("<<<<<<<  >>>>>>>");
-		}
-		if (wifiStatus == WL_CONNECTED) {
-			wifiReady = true;
-			getMomentLost = true;
-			Serial.println(">>>>>>> Connected to wifi <<<<<<<");
-			printWiFiStatus();
-			wifiRebootCounter = 0;
-			//For case where begin works immediately in this loop, but disconnects again within
-			// the attempt delay. Without changing nBS, the code is blocked from attempting to reconnect
-			networkBeginStart = millis() - WIFI_BEGIN_ATTEMPT_DELAY - 1;
-		}
-	}
-	else {
-		if (!socketReady) {
+      if (switchCred && (configPos != configSize - 1)) { configPos++; }
+      else if (switchCred && (configPos == configSize - 1)) { configPos = 0; }
+      Serial.println("<<<<<<< Wifi begin >>>>>>>");
+      Serial.println(millis());
+      Serial.println(WIFI_BEGIN_ATTEMPT_DELAY);
+      Serial.println(wifiRebootCounter);
+      Serial.println(wifiRebootTarget);
+      //Serial.println(momentLost);               //uncomment for debugging
+      Serial.println(configList[configPos].ssid);
+      wifiStatus = WiFi.begin(configList[configPos].ssid, configList[configPos].password);
+      attempts++;
+      networkBeginStart = millis();
+      Serial.println(networkBeginStart);
+      Serial.println("<<<<<<<  >>>>>>>");
+    }
+    if (wifiStatus == WL_CONNECTED) {
+      wifiReady = true;
+      getMomentLost = true;
+      Serial.println(">>>>>>> Connected to wifi <<<<<<<");
+      printWiFiStatus();
+      wifiRebootCounter = 0;
+      //For case where begin works immediately in this loop, but disconnects again within
+      // the attempt delay. Without changing nBS, the code is blocked from attempting to reconnect
+      networkBeginStart = millis() - WIFI_BEGIN_ATTEMPT_DELAY - 1;
+    }
+  }
+  else {
+    if (!socketReady) {
 #ifdef SEND_TCP
-			if (millis() - networkBeginStart > WIFI_BEGIN_ATTEMPT_DELAY / 2) {
-				Serial.println("/////// Client begin ///////");
-				Serial.println(millis());
-				Serial.println(networkBeginStart);
-				Serial.println(WIFI_BEGIN_ATTEMPT_DELAY);
-				Serial.println(wifiRebootCounter);
-				Serial.println(wifiRebootTarget);
-				Serial.println("///////  ///////");
-				socketReady = client.connect(server, 11999);
-				networkBeginStart = millis();
-			}
-			if (socketReady) {
-				Serial.print("connected to server: ");
-				Serial.println(server);
-			}
+      if (millis() - networkBeginStart > WIFI_BEGIN_ATTEMPT_DELAY / 2) {
+        Serial.println("/////// Client begin ///////");
+        Serial.println(millis());
+        Serial.println(networkBeginStart);
+        Serial.println(WIFI_BEGIN_ATTEMPT_DELAY);
+        Serial.println(wifiRebootCounter);
+        Serial.println(wifiRebootTarget);
+        Serial.println("///////  ///////");
+        socketReady = client.connect(server, 11999);
+        networkBeginStart = millis();
+      }
+      if (socketReady) {
+        Serial.print("connected to server: ");
+        Serial.println(server);
+      }
 #endif // SEND_TCP
 #ifdef SEND_UDP
-			Udp.begin(localPort);
-			socketReady = true;
+      Udp.begin(localPort);
+      socketReady = true;
 #endif // SEND_UDP
-		}
-	}
+    }
+  }
 
 }
 
 void rebootWiFi() {
-	Serial.println("******* WiFi reboot *******");
-	Serial.println(wifiRebootCounter);
-	Serial.println(wifiRebootTarget);
-	Serial.println("*******  *******");
-	wifiReady = false;
-	socketReady = false;
+  Serial.println("******* WiFi reboot *******");
+  Serial.println(wifiRebootCounter);
+  Serial.println(wifiRebootTarget);
+  Serial.println("*******  *******");
+  wifiReady = false;
+  socketReady = false;
 #ifdef SEND_UDP
-	Udp.stop();
+  Udp.stop();
 #endif
 #ifdef SEND_TCP
-	client.stop();
+  client.stop();
 #endif
-	WiFi.disconnect();
-	wifiStatus = WL_IDLE_STATUS;
-	networkBeginStart = millis() - WIFI_BEGIN_ATTEMPT_DELAY - 1; // set to immediately reconnect
-	wifiRebootCounter = 0;
+  WiFi.disconnect();
+  wifiStatus = WL_IDLE_STATUS;
+  networkBeginStart = millis() - WIFI_BEGIN_ATTEMPT_DELAY - 1; // set to immediately reconnect
+  wifiRebootCounter = 0;
 }
 
 int listNetworks() {
-	// scan for nearby networks:
-	Serial.println("xxxxxxx Scan Networks xxxxxxx");
-	Serial.println(millis());
-	int numSsid = WiFi.scanNetworks();
-	if (numSsid == -1)
-	{
-		Serial.println("Couldn't get a wifi connection");
-		//while (true);
-	}
-	Serial.println(millis());
+  // scan for nearby networks:
+  Serial.println("xxxxxxx Scan Networks xxxxxxx");
+  Serial.println(millis());
+  int numSsid = WiFi.scanNetworks();
+  if (numSsid == -1)
+  {
+    Serial.println("Couldn't get a wifi connection");
+    //while (true);
+  }
+  Serial.println(millis());
 
-	// print the list of networks seen:
-	Serial.print("number of available networks:");
-	Serial.println(numSsid);
+  // print the list of networks seen:
+  Serial.print("number of available networks:");
+  Serial.println(numSsid);
 
-	// print the network number and name for each network found:
-	for (int thisNet = 0; thisNet < numSsid; thisNet++) {
-		Serial.print(thisNet);
-		Serial.print(") ");
-		Serial.print(WiFi.SSID(thisNet));
-		Serial.print("\tSignal: ");
-		Serial.print(WiFi.RSSI(thisNet));
-		Serial.print(" dBm");
-		Serial.print(" \n");
-		//Serial.print("\tEncryption: ");
-		//printEncryptionType(WiFi.encryptionType(thisNet));
-		//Serial.flush();
-	}
-	Serial.println(millis());
-	Serial.println("xxxxxxx  xxxxxxx");
+  // print the network number and name for each network found:
+  for (int thisNet = 0; thisNet < numSsid; thisNet++) {
+    Serial.print(thisNet);
+    Serial.print(") ");
+    Serial.print(WiFi.SSID(thisNet));
+    Serial.print("\tSignal: ");
+    Serial.print(WiFi.RSSI(thisNet));
+    Serial.print(" dBm");
+    Serial.print(" \n");
+    //Serial.print("\tEncryption: ");
+    //printEncryptionType(WiFi.encryptionType(thisNet));
+    //Serial.flush();
+  }
+  Serial.println(millis());
+  Serial.println("xxxxxxx  xxxxxxx");
 
-	return numSsid;
+  return numSsid;
 }

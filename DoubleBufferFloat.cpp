@@ -70,11 +70,18 @@ size_t DoubleBufferFloat::getData(float ** data, uint32_t * timestamp) {
 	}
 	_isGetting = false;
 }
-
+#if 0
+//This function may possibly be able to be used in the ISR, it is dangerous
 size_t DoubleBufferFloat::readData(const float ** data, const uint32_t** timestamp){
 	*data = _inputBuffer->data;
 	*timestamp = &_inputBuffer->timestamp;
 	return _inputBuffer->size();
+}
+#endif
+size_t DoubleBufferFloat::readData(const float ** data, const uint32_t** timestamp){
+	*data = _outputBuffer->data;
+	*timestamp = &_outputBuffer->timestamp;
+	return _outputBuffer->size();
 }
 //void DoubleBufferFloat::setAutoResize(bool b) {
 //	_buffer1->autoResize = b;
