@@ -72,17 +72,22 @@ size_t DoubleBufferFloat::getData(float ** data, uint32_t * timestamp) {
 }
 #if 0
 //This function may possibly be able to be used in the ISR, it is dangerous
+//Seems to read fine, but may collide; crashes after physical jarring of the EmotiBit
 size_t DoubleBufferFloat::readData(const float ** data, const uint32_t** timestamp){
 	*data = _inputBuffer->data;
 	*timestamp = &_inputBuffer->timestamp;
 	return _inputBuffer->size();
 }
-#endif
+
+//This function would be used to read the output buffer in the loop outside of addPacket()
+//For some reason, this data this digitally noisy as hell and usable, requires debugging
 size_t DoubleBufferFloat::readData(const float ** data, const uint32_t** timestamp){
 	*data = _outputBuffer->data;
 	*timestamp = &_outputBuffer->timestamp;
 	return _outputBuffer->size();
 }
+#endif
+
 //void DoubleBufferFloat::setAutoResize(bool b) {
 //	_buffer1->autoResize = b;
 //	_buffer2->autoResize = b;

@@ -19,48 +19,52 @@ bool sendConsole = false;
 #include <Filters.h>
 #include <cmath>
 
-Adafruit_IS31FL3731_Wing ledmatrix = Adafruit_IS31FL3731_Wing();
 SdFat SD;
 
-uint8_t heartVert[7][15] = { {0, 0, 0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0},
-        {0, 0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-        {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0,  0},
-        {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-        {0, 0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-        {0, 0,  0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0} };
-uint8_t heartHor[7][15] = { {0, 0, 0,  0,  0,  1,  1,  0,  1,  1,  0,  0,  0,  0,  0},
-        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
-        {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0,  0},
-        {0, 0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0,  0},
-        {0, 0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0} };
+Adafruit_IS31FL3731_Wing ledmatrix = Adafruit_IS31FL3731_Wing();
 
-unsigned long starttime = 0;
-bool newHeartFrame = false;
-const float * ppgData = nullptr;
-const uint32_t* charlieTS = nullptr;
+unsigned long starttime = 0;  			//usefull for measuring loop times
+bool newHeartFrame = false;				//tell the ISR that new data is ready to draw
+const float * ppgData = nullptr;		//pointer to data
+const uint32_t* charlieTS = nullptr;	//pointer to timestamp
 float dataPoint;
-float maxHeart =0;
-const float onRatio = 1;
-const uint8_t maxBrightness = 15;
-float peakDetect = 0;
-const float pdMin = 10;
-float lastPD = 0;
-const float tau = -1.4;   // exp(tau * t * T)
-size_t charlieLen;
-size_t lastSize;
+float maxHeart = 0;						//Calculated max value in a particular buffer
+float lastB = 0;						//Last value of maxHeart, used to check for change
+const float onRatio = 1;				//Threshold of datapoint / peakDetect below which is set to 0
+const uint8_t maxBrightness = 15;		//Maximum LED Brigtness (0-255)
+float peakDetect = 0;					//Leaky peakDetect filter value, exponential decay
+const float pdMin = 10;					//Minimum value for peakDetect
+float lastPD = 0;						//last peakDetect Value, used in regression for new calc
+const float tau = -1.4;   				//leaky peak detector eq: y= e^(tau * T * t)
+const float fs =  25;					//Sampling Frequency of the Data
+const float T = 1/fs;					//Period
+const float timeConst = exp(tau * T);	//exponential const used in peak detector
+
+//Filters
 const float lp_freq = 8;
 const float hp_freq = 0.5;
-const float fs =  25;
-const float T = 1/fs;
-const float timeConst = exp(tau * T);
 FilterOnePole lowpassFilter(LOWPASS, lp_freq, 0.0, fs);
 FilterOnePole highpassFilter(HIGHPASS, hp_freq, 0.0, fs);
 
+
+const uint8_t heartVert[7][15] = { 	{0, 0, 0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0} };
+const uint8_t heartHor[7][15] = { 	{0, 0, 0,  0,  0,  1,  1,  0,  1,  1,  0,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  1,  1,  1,  1,  1,  1,  1,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  0,  1,  1,  1,  1,  1,  0,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  0,  0,  1,  1,  1,  0,  0,  0,  0,  0,  0},
+							        {0, 0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0} };
+
+
 void drawHeart(bool isVert = true, uint8_t brightness = 15) {
-  uint8_t * heart = nullptr;
+  const uint8_t * heart = nullptr;
   if (isVert == true) {
     heart = &heartVert[0][0];
   }
@@ -70,6 +74,49 @@ void drawHeart(bool isVert = true, uint8_t brightness = 15) {
   for (uint8_t i = 0; i < 7; i++)
     for (uint8_t j = 0; j < 15; j++)
       if (heart[15 * i + j] == 1) { ledmatrix.drawPixel(j, i, brightness); }
+}
+
+//This currently lives in addPacket(), returns a boolean if the display should change
+bool createHeartFrame(float* data, size_t dataLen){
+	maxHeart =0;
+	float b =0;
+    for (uint32_t i = 0; i < dataLen; ++i){
+        dataPoint = data[i];
+
+        //Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
+        dataPoint = highpassFilter.input(dataPoint);
+        if (dataPoint < 0) { dataPoint = 0; }
+        dataPoint = lowpassFilter.input(dataPoint);
+
+        //calculate peakDetect values
+        peakDetect = lastPD * timeConst;
+        if(peakDetect < pdMin){ peakDetect = pdMin; }
+        if(dataPoint >= peakDetect){
+          peakDetect = dataPoint;
+        }
+        lastPD = peakDetect;
+        
+    	//Serial.print(dataPoint);
+    	//Serial.print(',');
+    	//Serial.println(peakDetect);
+
+
+        b = dataPoint / peakDetect;
+        //Check threshold
+        if(b < onRatio){ b = 0;}
+        //Map ratio to LED brightness
+        b = maxBrightness * b;
+        //Set the buffer maximum
+        if (b > maxHeart){maxHeart = b;}
+
+        //Serial.println(b);
+    }
+    // Check if value is different from last one, to save resources
+  	if( maxHeart != lastB) { 
+  		newHeartFrame = true;
+  		lastB = maxHeart;
+  	}
+  	return newHeartFrame;
 }
 
 typedef struct EmotibitConfig {
@@ -552,43 +599,10 @@ bool addPacket(uint32_t timestamp, EmotiBit::DataType t, float * data, size_t da
     packetCount++;
     loopCount = 0;
     
-    #if 1
-    if(t == EmotiBit::DataType::PPG_INFRARED){
-      maxHeart =0;
-      float b =0;
-        for (uint32_t i = 0; i < dataLen; ++i){
-         dataPoint = data[i];
-
-        //Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
-        dataPoint = highpassFilter.input(dataPoint);
-        if (dataPoint < 0) { dataPoint = 0; }
-        dataPoint = lowpassFilter.input(dataPoint);
-
-        //peakDetect = lastPD * exp(timeConst * pdTime);
-        peakDetect = lastPD * timeConst;
-        if(peakDetect < pdMin){ peakDetect = pdMin; }
-        if(dataPoint >= peakDetect){
-          peakDetect = dataPoint;
-          //pdTime = 0;
-        }
-        lastPD = peakDetect;
-        //pdTime++;
-        
-       Serial.print(dataPoint);
-       Serial.print(',');
-       Serial.println(peakDetect);
-
-        b = dataPoint / peakDetect;
-        if(b < onRatio){ b = 0;}
-        b = maxBrightness * b;
-        //Serial.println(b);
-        if (b > maxHeart){maxHeart = b;}
-        }
-      newHeartFrame = true;
-      //drawHeart(true, max );
+   	if(t == EmotiBit::DataType::PPG_INFRARED){
+    	createHeartFrame(data,dataLen);
     }
-    
-    #endif
+
     return true;
   }
   return false;
@@ -682,7 +696,7 @@ void parseIncomingMessages() {
           }
         }
         else if (typeTag.equals("AK")) { // ACK
-          isLoggableMessage = false;
+          isLoggableMessage = true;
           commaN1 = receivedMessage.indexOf(',', dataStartChar);
           uint16_t ackPacketNumber = receivedMessage.substring(dataStartChar, commaN1).toInt();
           //Serial.println(waitingForSyncData);
@@ -692,7 +706,7 @@ void parseIncomingMessages() {
           }
         }
         else if (typeTag.equals("TL")) { // Timestamp Local
-          isLoggableMessage = false;
+          isLoggableMessage = true;
           //isAckableMessage = true;
         }
         else if (typeTag.equals("TU")) { // Timestamp UTC
@@ -705,6 +719,7 @@ void parseIncomingMessages() {
           isLoggableMessage = true;
         }
         else if (typeTag.equals("RB")) { // Recording begin
+          stopTimer();
           isLoggableMessage = true;
           String datetimeString = receivedMessage.substring(dataStartChar, receivedMessage.length() - 1);
           // Write the configuration info to json file
@@ -730,6 +745,13 @@ void parseIncomingMessages() {
           else {
             Serial.println("Failed to open data file for writing");
           }
+          sendTimerStart = millis();
+		  requestTimestampTimerStart = millis();
+
+		  //Serial.println("Free Ram :" + String(FreeRam(), DEC) + " bytes");
+		  Serial.println("Setup complete");
+		  Serial.println("Starting interrupts");
+		  startTimer(BASE_SAMPLING_FREQ);
         }
         else if (typeTag.equals("RE")) { // Recording end
           isLoggableMessage = true;
@@ -910,37 +932,7 @@ void loop() {
 
 #if 0
   charlieLen = emotibit.readData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
-  if (charlieLen > 0){
-    float max =0;
-    float b =0;
-      for (uint32_t i = 0; i < charlieLen; ++i)
-      {
-        dataPoint = ppgData[i];
-          Serial.println(dataPoint);
-      //Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
-      dataPoint = highpassFilter.input(dataPoint);
-      if (dataPoint < 0) { dataPoint = 0; }
-      dataPoint = lowpassFilter.input(dataPoint);
-
-      peakDetect = lastPD * exp(timeConst * t);
-      if(peakDetect <1){ peakDetect = 1; }
-      if(dataPoint >= peakDetect){
-        peakDetect = dataPoint;
-        t = 0;
-      }
-      lastPD = peakDetect;
-      t++;
-      
-      b = 15* dataPoint / peakDetect;
-      //Serial.println(dataPoint);
-      max+=b;
-      //if (b > max){max = b;}
-      }
-      //clearToDraw = true;
-    //drawHeart(true, max );
-    //Serial.println(max/charlieLen);
-    //Serial.print(',');
-    //Serial.println(peakDetect);
+	drawHeartinLoop()
   }
 #endif
 
@@ -1032,40 +1024,18 @@ void readSensors() {
 #if 0
   static uint16_t charlieCounter;
   if (charlieCounter > CHARLIE_SAMPLING_DIV) {
-    starttime = millis();
+  	//This would use the readData that points to the _inputBuffer
+  	//Was working well with the exception of crashing in response to physical jarring of device
     charlieLen = emotibit.readData(EmotiBit::DataType::PPG_INFRARED, &ppgData, &charlieTS);
    
     if ((charlieLen > 0)&&(charlieLen != lastSize)) {
-      //starttime = millis();
-      //Serial.println(starttime);
-      //Serial.println(charlieLen);
 
-      dataPoint = ppgData[charlieLen-1];
+      calcHeartISR();
+      drawHeart(true, b);
 
-      //Highpass Filter, Rectify, Lowpass, Attenuate, and remove remaining notch
-      dataPoint = highpassFilter.input(dataPoint);
-      if (dataPoint < 0) { dataPoint = 0; }
-      dataPoint = lowpassFilter.input(dataPoint);
-     
-      peakDetect = lastPD * exp(timeConst * t);
-      if(peakDetect <1){ peakDetect = 1; }
-      if(dataPoint >= peakDetect){
-        peakDetect = dataPoint;
-        t = 0;
-      }
-      lastPD = peakDetect;
-      t++;
-      
-      drawHeart(true, 15 * dataPoint / peakDetect);
-      //Serial.println(15 * dataPoint / peakDetect);
-      //Serial.print(',');
-      //Serial.println(peakDetect);
-      //Serial.print("Charlie Duration: ");
-      //Serial.println(millis() - starttime);  //Less than 1 ms
       lastSize = charlieLen;
     }
     charlieCounter = 0;
-    Serial.println(millis() - starttime);
   }
   charlieCounter++;
 #endif
