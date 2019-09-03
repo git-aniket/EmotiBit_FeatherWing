@@ -146,7 +146,7 @@ bool createHeartFrame(float* data, size_t dataLen){
 }
 
 // EDA CharliePlex matrix
-const int nEdrSteps = 5;
+const int nEdrSteps = 4;
 const uint8_t edaEmojisVert4[nEdrSteps][charlieWidth][charlieLength] = {
 	{
 		{0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
@@ -166,15 +166,15 @@ const uint8_t edaEmojisVert4[nEdrSteps][charlieWidth][charlieLength] = {
 		{0, 0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0},
 		{0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}
 	},
-	{
-		{0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
-		{0, 0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0},
-		{0, 0,  0,  0,  0,  1,  0,  1,  0,  1,  0,  0,  0,  0,  0},
-		{0, 0,  0,  0,  0,  0,  0,  1,  0,  1,  0,  0,  0,  0,  0},
-		{0, 0,  0,  0,  0,  1,  0,  1,  0,  1,  0,  0,  0,  0,  0},
-		{0, 0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0},
-		{0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}
-	},
+	//{
+	//	{0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
+	//	{0, 0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0},
+	//	{0, 0,  0,  0,  0,  1,  0,  1,  0,  1,  0,  0,  0,  0,  0},
+	//	{0, 0,  0,  0,  0,  0,  0,  1,  0,  1,  0,  0,  0,  0,  0},
+	//	{0, 0,  0,  0,  0,  1,  0,  1,  0,  1,  0,  0,  0,  0,  0},
+	//	{0, 0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0},
+	//	{0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0}
+	//},
 	{
 		{0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0},
 		{0, 0,  0,  0,  0,  0,  0,  0,  1,  1,  0,  0,  0,  0,  0},
@@ -225,7 +225,7 @@ void drawEmojiChange(const uint8_t * charliePlexEmojis, uint8_t currentEmoji, ui
 void drawEdrEmoji(float edrValue, uint8_t brightness = 15) {
 	static bool firstDraw = true;
 	static uint8_t prevEdrEmoji = 0;
-	float maxEdrValue = 0.4f;
+	float maxEdrValue = 0.3f;
 	for (int s = nEdrSteps - 1; s >= 0; s--) {
 		// ToDo: Calculate edrThresh once
 		float edrThresh = maxEdrValue * s / (nEdrSteps - 1);
@@ -321,7 +321,7 @@ uint32_t wifiRebootTarget = 20000;        /*Set to 250 for WiFi debugging, 20000
 uint32_t networkBeginStart;
 uint32_t WIFI_BEGIN_ATTEMPT_DELAY = 5000;
 uint32_t WIFI_BEGIN_SWITCH_CRED = 300000;      //Set to 30000 for debug, 300000 for Release
-bool hibernateButtonPressed = false;
+bool switchPressed = false;
 uint32_t hibernateButtonStart;
 uint32_t hibernateButtonDelay = 2000;
 uint32_t hibernateBeginStart;
@@ -336,6 +336,8 @@ uint32_t requestTimestampTimerStart;
 const uint32_t REQUEST_TIMESTAMP_DELAY = 5107; // Milliseconds: choose a prime number to avoid spurocity
 int32_t waitingForSyncData = -1;
 bool startHibernate = false;
+bool startWiFiShutdown = false;
+uint32_t startWiFiShutdownWiFi = millis();
 bool stopSDWrite = false;
 volatile bool ledOn = false;
 volatile bool ledPinBusy = false;
@@ -358,9 +360,9 @@ const uint32_t CPU_HZ = 48000000;
 const uint32_t SERIAL_BAUD = 2000000; //115200
 uint16_t loopCount = 0;
 
-#define BASE_SAMPLING_FREQ 30
+#define BASE_SAMPLING_FREQ 60
 #define EDA_SAMPLING_DIV 1
-#define TEMPERATURE_SAMPLING_DIV 1
+#define TEMPERATURE_SAMPLING_DIV 2
 #define BATTERY_SAMPLING_DIV 60
 #define CHARLIE_SAMPLING_DIV 1
 
@@ -893,10 +895,10 @@ void loop() {
 
   // Check for hibernate button press
   if (switchRead() == 0) {
-    hibernateButtonPressed = false;
+    switchPressed = false;
   }
   else if (switchRead() == 1) {
-    if (hibernateButtonPressed) {
+    if (switchPressed) {
       // hibernate button was already pressed -- check how long
       if (!startHibernate && millis() - hibernateButtonStart > hibernateButtonDelay) {
         // delay exceeded
@@ -918,8 +920,11 @@ void loop() {
     }
     else {
       // start timer
-      hibernateButtonPressed = true;
+      switchPressed = true;
       hibernateButtonStart = millis();
+
+	  startWiFiShutdown = true;
+	  startWiFiShutdownWiFi = millis();
     }
   }
 
@@ -968,6 +973,11 @@ void loop() {
 
   if (startHibernate && millis() - hibernateBeginStart > hibernateBeginDelay) {
     hibernate();
+  }
+
+  if (startWiFiShutdown && millis() - startWiFiShutdownWiFi > hibernateBeginDelay) {
+	  shutdownWiFi();
+	  startWiFiShutdown = false;
   }
 
   if (stopSDWrite) {
