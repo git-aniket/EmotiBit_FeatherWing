@@ -30,6 +30,12 @@ const int charlieLength = 15;
 // EDA CharliePlex variables
 bool performEdaCharliePlex = true;
 volatile float edrValue = -1000000.f;
+const float edaFs = 15.f;
+const float edaHpFreq = 0.15;
+const float edaLpFreq = 5;
+FilterOnePole highpassFilter(HIGHPASS, edaHpFreq, 0.0, edaFs);
+FilterOnePole lowpassFilter(LOWPASS, edaLpFreq, 0.0, edaFs);
+
 
 // HR CharliePlex variables
 bool performHrCharliePlex = false;
@@ -45,16 +51,15 @@ const uint8_t maxBrightness = 15;		//Maximum LED Brigtness (0-255)
 float peakDetect = 0;					//Leaky peakDetect filter value, exponential decay
 const float pdMin = 10;					//Minimum value for peakDetect
 float lastPD = 0;						//last peakDetect Value, used in regression for new calc
-const float tau = -1.4;   				//leaky peak detector eq: y= e^(tau * T * t)
 const float fs = 25;					//Sampling Frequency of the Data
+const float tau = -1.4;   				//leaky peak detector eq: y= e^(tau * T * t)
 const float T = 1 / fs;					//Period
 const float timeConst = exp(tau * T);	//exponential const used in peak detector
-
-//Filters
+// Filters
 const float lp_freq = 8;
 const float hp_freq = 0.5;
-FilterOnePole lowpassFilter(LOWPASS, lp_freq, 0.0, fs);
-FilterOnePole highpassFilter(HIGHPASS, hp_freq, 0.0, fs);
+FilterOnePole edaLowpassFilter(LOWPASS, lp_freq, 0.0, fs);
+FilterOnePole edaHighpassFilter(HIGHPASS, hp_freq, 0.0, fs);
 
 void turnOffCharliePlex() {
 	for (uint8_t i = 0; i < charlieWidth; i++) {
@@ -225,7 +230,7 @@ void drawEmojiChange(const uint8_t * charliePlexEmojis, uint8_t currentEmoji, ui
 void drawEdrEmoji(float edrValue, uint8_t brightness = 15) {
 	static bool firstDraw = true;
 	static uint8_t prevEdrEmoji = 0;
-	float maxEdrValue = 0.3f;
+	float maxEdrValue = 0.275f;
 	for (int s = nEdrSteps - 1; s >= 0; s--) {
 		// ToDo: Calculate edrThresh once
 		float edrThresh = maxEdrValue * s / (nEdrSteps - 1);
@@ -241,13 +246,14 @@ void drawEdrEmoji(float edrValue, uint8_t brightness = 15) {
 }
 
 float createEdrValue(float* data, size_t dataLen) {
-	float tempMax = -1000000.f;
+
+	static float dataPoint;
 	for (uint32_t i = 0; i < dataLen; ++i) {
-		if (data[i] > tempMax) {
-			tempMax = data[i];
-		}
+		dataPoint = data[i];
+		dataPoint = edaLowpassFilter.input(dataPoint);
+		dataPoint = edaHighpassFilter.input(dataPoint);
 	}
-	return 1.725 - tempMax; // subtract center point (should be 3.3V / 2?)
+	return dataPoint; 
 }
 
 typedef struct EmotibitConfig {
