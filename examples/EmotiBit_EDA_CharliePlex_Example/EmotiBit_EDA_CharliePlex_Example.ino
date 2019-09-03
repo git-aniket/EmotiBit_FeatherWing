@@ -247,7 +247,7 @@ float createEdrValue(float* data, size_t dataLen) {
 			tempMax = data[i];
 		}
 	}
-	return 1.65 - tempMax; // subtract from 3.3V / 2 to be zero centered
+	return 1.725 - tempMax; // subtract center point (should be 3.3V / 2?)
 }
 
 typedef struct EmotibitConfig {
@@ -337,6 +337,7 @@ const uint32_t REQUEST_TIMESTAMP_DELAY = 5107; // Milliseconds: choose a prime n
 int32_t waitingForSyncData = -1;
 bool startHibernate = false;
 bool startWiFiShutdown = false;
+bool wiFiIsShutdown = false;
 uint32_t startWiFiShutdownWiFi = millis();
 bool stopSDWrite = false;
 volatile bool ledOn = false;
@@ -888,8 +889,9 @@ void loop() {
   Serial.println("loop()");
 #endif // DEBUG
 
-  updateWiFi();
-
+  if (!wiFiIsShutdown) {
+	  updateWiFi();
+  }
   parseIncomingMessages();
 
 
@@ -1700,6 +1702,7 @@ void shutdownWiFi() {
 	}
 	Serial.println("Ending WiFi...");
 	WiFi.end();
+	wiFiIsShutdown = true;
 #endif
 }
 
