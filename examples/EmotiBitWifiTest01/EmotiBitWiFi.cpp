@@ -6,7 +6,8 @@ int8_t EmotiBitWiFi::setup()
 	WiFi.setPins(8, 7, 4, 2);
 #endif
 
-	if (WiFi.status() == WL_NO_SHIELD) {
+	if (WiFi.status() == WL_NO_SHIELD) 
+	{
 		return WL_NO_SHIELD;
 	}
 
@@ -69,17 +70,20 @@ int8_t EmotiBitWiFi::processAdvertising()
 
 	// ToDo: Consider need for a while loop here handle packet backlog
 	int packetSize = _advertisingCxn.parsePacket();
-	if (packetSize) { 
+	if (packetSize) 
+	{ 
 		outMessage = "";
-
 		// read the packet into packetBufffer
 		int len = _advertisingCxn.read(_inPacketBuffer, EmotiBitPacket::MAX_TO_EMOTIBIT_PACKET_LEN);
-		if (len > 0) {
+		if (len > 0) 
+		{
 			_inPacketBuffer[len] = '\0';
 			_receivedAdvertisingMessage = String(_inPacketBuffer);
+			Serial.print("Received: ");
 			Serial.print(_receivedAdvertisingMessage);
 			int16_t dataStartChar = EmotiBitPacket::getHeader(_receivedAdvertisingMessage, _packetHeader);
-			if (dataStartChar != 0) {
+			if (dataStartChar != 0) 
+			{
 				bool sendMessage = false;
 				IPAddress senderIp;
 				uint16_t senderPort;
@@ -95,9 +99,10 @@ int8_t EmotiBitWiFi::processAdvertising()
 					outPacketHeader.protocolVersion;
 					outPacketHeader.dataReliability = 1;
 					outMessage += EmotiBitPacket::headerToString(outPacketHeader);
-					if (_controlCxn.connected())
+					if (_isConnected)
 					{
-						outMessage += "," + _controlPort;
+						outMessage += ",";
+						outMessage += _controlPort;
 					} 
 					else 
 					{
@@ -108,21 +113,21 @@ int8_t EmotiBitWiFi::processAdvertising()
 				}
 				else if (_packetHeader.typeTag.equals(EmotiBitPacket::TypeTag::EMOTIBIT_CONNECT))
 				{
-					if (!_controlCxn.connected()) 
+					if (!_isConnected)
 					{
 						// if we aren't already connected to a computer
-						_remoteIp = _advertisingCxn.remoteIP();
+						_hostIp = _advertisingCxn.remoteIP();
 
 						// ToDo: parse message data to obtain correct ports
 						_controlPort = 11999;
 						_dataPort = 3001;
 
 						Serial.print("\nStarting control connection to server: ");
-						Serial.print(_remoteIp);
+						Serial.print(_hostIp);
 						Serial.print(" : ");
 						Serial.print(_controlPort);
 						Serial.print(" ... ");
-						if (_controlCxn.connect(_remoteIp, _controlPort))
+						if (_controlCxn.connect(_hostIp, _controlPort))
 						{
 							_isConnected = true;
 							_controlCxn.flush();
@@ -131,7 +136,7 @@ int8_t EmotiBitWiFi::processAdvertising()
               // ToDo: Send a message to host to confirm connection
 
 							Serial.print("Starting data connection to server: ");
-							Serial.print(_remoteIp);
+							Serial.print(_hostIp);
 							Serial.print(" : ");
 							Serial.println(_dataPort);
 							_dataCxn.begin(_dataPort);
@@ -158,7 +163,7 @@ int8_t EmotiBitWiFi::sendData(String & message)
 {
 	if (_isConnected)
 	{
-		sendUdp(_dataCxn, message, _remoteIp, _dataPort);
+		sendUdp(_dataCxn, message, _hostIp, _dataPort);
 	}
 }
 
@@ -183,16 +188,35 @@ int8_t EmotiBitWiFi::sendUdp(WiFiUDP& udp, const String& message, const IPAddres
 	}
 }
 
-uint8_t EmotiBitWiFi::readControl(String& packet) {
+uint8_t EmotiBitWiFi::readControl(String& packet) 
+{
 	uint8_t numPackets = 0;
-	if (_controlCxn.connected()) {
-		while (_controlCxn.available()) {
-			char c = _controlCxn.read();
-			_receivedControlMessage += c;
-			if (c == EmotiBitPacket::PACKET_DELIMITER_CSV) {
+	if (_isConnected) 
+	{
+		while (_controlCxn.available()) 
+		{
+			int c = _controlCxn.read();
+			
+			if (c == (int) EmotiBitPacket::PACKET_DELIMITER_CSV) 
+			{
 				numPackets++;
-				break;
+				packet = "";
+				packet += _receivedControlMessage;
+				_receivedControlMessage = "";
+				return numPackets;
+			}
+			else
+			{
+				if (c == 0) {
+					// Throw out null term
+					// ToDo: handle this more properly
+				}
+				else
+				{
+					_receivedControlMessage += (char) c;
+				}
 			}
 		}
 	}
+	return numPackets;
 }

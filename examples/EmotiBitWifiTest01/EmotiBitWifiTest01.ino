@@ -42,16 +42,15 @@ void setup()
 }
 
 void loop() {
-	// Handle EmotiBit advertising communications
 	emotibitWifi.processAdvertising();
 
 	// Read control packets
-	//String controlPacket;
-	//while (emotibitWifi.readControl(controlPacket))
-	//{
-	//	Serial.print("Receiving control msg:");
-	//	Serial.println(controlPacket);
-	//}
+	String controlPacket;
+	while (emotibitWifi.readControl(controlPacket))
+	{
+		Serial.print("Receiving control msg: ");
+		Serial.println(controlPacket);
+	}
 
   if (emotibitWifi._isConnected) {
 	  // Send data periodically

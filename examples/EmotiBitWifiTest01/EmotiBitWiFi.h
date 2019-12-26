@@ -47,7 +47,7 @@ public:
 	uint16_t _controlPort;								// Port to toggle EmotiBit controls
 	uint16_t _dataPort;								// Port to sent EmotiBit data
 
-	IPAddress _remoteIp;
+	IPAddress _hostIp;
 
 	WiFiClient _controlCxn;
 	WiFiUDP _advertisingCxn;
@@ -70,8 +70,8 @@ public:
 	char _inPacketBuffer[EmotiBitPacket::MAX_TO_EMOTIBIT_PACKET_LEN + 1]; //buffer to hold incoming packet
 	EmotiBitPacket::Header _packetHeader;
 #ifdef ARDUINO
-	String _receivedAdvertisingMessage; 
-	String _receivedControlMessage;
+	String _receivedAdvertisingMessage = ""; 
+	String _receivedControlMessage = "";
 #else
 
 #endif
