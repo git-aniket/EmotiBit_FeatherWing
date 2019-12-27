@@ -95,4 +95,6 @@ public:
 	int8_t sendAdvertising(const String& message, const IPAddress& ip, const uint16_t& port);
 
 	int8_t sendUdp(WiFiUDP& udp, const String& message, const IPAddress& ip, const uint16_t& port);
+
+	String createPongPacket();
 };

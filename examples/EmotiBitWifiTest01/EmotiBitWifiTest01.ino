@@ -59,11 +59,6 @@ void loop() {
 		{
 			emotibitWifi.disconnect();
 		}
-		if (header.typeTag.equals(EmotiBitPacket::TypeTag::PING))
-		{
-			EmotiBitPacket::Header pongHeader = EmotiBitPacket::createHeader(EmotiBitPacket::TypeTag::PONG, millis(), controlPacketNumber++);
-			emotibitWifi.sendControl(EmotiBitPacket::headerToString(pongHeader) + EmotiBitPacket::PACKET_DELIMITER_CSV);
-		}
 	}
 
   if (emotibitWifi._isConnected) {
@@ -73,14 +68,7 @@ void loop() {
 		  now = millis();
 			Serial.print("Sending Data: ");
 			static uint8_t data = 0;
-			EmotiBitPacket::Header header;
-			header.timestamp = millis();
-			header.packetNumber = dataPacketNumber++;
-			header.dataLength = 1;
-			header.typeTag = EmotiBitPacket::TypeTag::DEBUG;
-			header.protocolVersion = 1;
-			header.dataReliability = 1;
-			String packet = EmotiBitPacket::headerToString(header) + "," + data++ + EmotiBitPacket::PACKET_DELIMITER_CSV;
+			String packet = EmotiBitPacket::createPacket(EmotiBitPacket::TypeTag::DEBUG, dataPacketNumber++, String(data++), 1);
 			Serial.print(packet);
 			emotibitWifi.sendData(packet);
 	  }

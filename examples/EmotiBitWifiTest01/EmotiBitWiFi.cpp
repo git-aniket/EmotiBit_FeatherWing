@@ -85,28 +85,26 @@ int8_t EmotiBitWiFi::processAdvertising()
 			if (dataStartChar != 0) 
 			{
 				bool sendMessage = false;
-				IPAddress senderIp;
-				uint16_t senderPort;
+				IPAddress senderIp = _advertisingCxn.remoteIP();
+				uint16_t senderPort = _advertisingCxn.remotePort();
+
 				if (_packetHeader.typeTag.equals(EmotiBitPacket::TypeTag::HELLO_EMOTIBIT))
 				{
-					senderIp = _advertisingCxn.remoteIP();
-					senderPort = _advertisingCxn.remotePort();
-
-					outPacketHeader.timestamp = millis();
-					outPacketHeader.packetNumber = advertisingPacketCounter++;
-					outPacketHeader.dataLength = 0;
-					outPacketHeader.typeTag = String(EmotiBitPacket::TypeTag::HELLO_HOST);
-					outPacketHeader.protocolVersion;
-					outPacketHeader.dataReliability = 1;
-					outMessage += EmotiBitPacket::headerToString(outPacketHeader);
+					EmotiBitPacket::Header outPacketHeader = EmotiBitPacket::createHeader(EmotiBitPacket::TypeTag::HELLO_HOST, millis(), advertisingPacketCounter++);
+					outMessage += EmotiBitPacket::headerToString(outPacketHeader) + EmotiBitPacket::PACKET_DELIMITER_CSV;
 					if (_isConnected)
 					{
 						outMessage += ",";
-						outMessage += _controlPort;
+						outMessage += EmotiBitPacket::PayloadLabel::DATA_PORT;
+						outMessage += ",";
+						outMessage += _dataPort;
 					} 
 					else 
 					{
-						outMessage += ",-1";
+						outMessage += ",";
+						outMessage += EmotiBitPacket::PayloadLabel::DATA_PORT;
+						outMessage += ",";
+						outMessage += "-1";
 					}
 					outMessage += "\n";
 					sendMessage = true;
@@ -116,11 +114,37 @@ int8_t EmotiBitWiFi::processAdvertising()
 					//_controlCxn.setTimeout(50);
 					//_dataCxn.setTimeout(50);
 
-					// ToDo: parse message data to obtain correct ports
-					_controlPort = 11999;
-					_dataPort = 3001;
-					connect(_advertisingCxn.remoteIP(), _receivedAdvertisingMessage.substring(dataStartChar));
-					//connect(_advertisingCxn.remoteIP(), _controlPort, _dataPort);
+					if (!_isConnected)
+					{
+						connect(_advertisingCxn.remoteIP(), _receivedAdvertisingMessage.substring(dataStartChar));
+						//connect(_advertisingCxn.remoteIP(), _controlPort, _dataPort);
+					}
+					if (_isConnected)
+					{
+						// Send a message to tell the host that the connection worked
+						outMessage += createPongPacket();
+						sendMessage = true;
+					}
+				}
+				else if (_packetHeader.typeTag.equals(EmotiBitPacket::TypeTag::PING))
+				{
+					if (_isConnected)
+					{
+						String value;
+						int16_t valueChar = EmotiBitPacket::getPacketKeyedValue(_receivedAdvertisingMessage,
+							EmotiBitPacket::PayloadLabel::DATA_PORT, value, dataStartChar);
+
+						if (valueChar > -1)
+						{
+							// We found DATA_PORT in the payload
+							if (senderIp == _hostIp && value.toInt() == _dataPort)
+							{
+								// PING is from our host, reply with PONG to tell the host that we're connected
+								outMessage += createPongPacket();
+								sendMessage = true;
+							}
+						}
+					}
 				}
 				if (sendMessage)
 				{
@@ -128,7 +152,6 @@ int8_t EmotiBitWiFi::processAdvertising()
 				}
 			}
 		}
-
 	}
 
 	if (_isConnected)
@@ -208,35 +231,22 @@ uint8_t EmotiBitWiFi::readControl(String& packet)
 
 int8_t EmotiBitWiFi::connect(IPAddress hostIp, const String& connectPayload) {
 
-	int16_t startChar = 0;
 	bool gotControlPort = false;
 	bool gotDataPort = false;
-	String element;
-	do
+	String value;
+	int16_t valueChar;
+	valueChar = EmotiBitPacket::getPacketKeyedValue(connectPayload,	EmotiBitPacket::PayloadLabel::CONTROL_PORT, value);
+	if (valueChar > -1)
 	{
-		startChar = EmotiBitPacket::getPacketElement(connectPayload, element, startChar);
-		if (element.equals(EmotiBitPacket::PayloadLabel::CONTROL_PORT))
-		{
-			element = "";
-			startChar = EmotiBitPacket::getPacketElement(connectPayload, element, startChar);
-			if (element.length() > 0) {
-				_controlPort = element.toInt();
-				gotControlPort = true;
-			}
-		}
-		else
-		{
-			if (element.equals(EmotiBitPacket::PayloadLabel::DATA_PORT))
-			{
-				element = "";
-				startChar = EmotiBitPacket::getPacketElement(connectPayload, element, startChar);
-				if (element.length() > 0) {
-					_dataPort = element.toInt();
-					gotDataPort = true;
-				}
-			}
-		}
-	} while (startChar > -1);
+		_controlPort = value.toInt();
+		gotControlPort = true;
+	}
+	valueChar = EmotiBitPacket::getPacketKeyedValue(connectPayload, EmotiBitPacket::PayloadLabel::DATA_PORT, value);
+	if (valueChar > -1)
+	{
+		_dataPort = value.toInt();
+		gotDataPort = true;
+	}
 
 	if (gotControlPort & gotDataPort)
 	{
@@ -288,4 +298,15 @@ int8_t EmotiBitWiFi::disconnect() {
 		return SUCCESS;
 	}
 	return FAIL;
+}
+
+String EmotiBitWiFi::createPongPacket()
+{
+	String outMessage;
+	EmotiBitPacket::Header outPacketHeader = EmotiBitPacket::createHeader(EmotiBitPacket::TypeTag::PONG, millis(), advertisingPacketCounter++, 2);
+	outMessage += EmotiBitPacket::headerToString(outPacketHeader);
+	outMessage += ",";
+	outMessage += EmotiBitPacket::PayloadLabel::DATA_PORT;
+	outMessage += _dataPort;
+	outMessage += EmotiBitPacket::PACKET_DELIMITER_CSV;
 }
