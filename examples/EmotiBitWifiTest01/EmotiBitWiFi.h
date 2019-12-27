@@ -66,6 +66,7 @@ public:
 	static const uint32_t WIFI_BEGIN_SWITCH_CRED = 300000;      //Set to 30000 for debug, 300000 for Release
 	static const uint32_t SETUP_TIMEOUT = 61500;          //Enough time to run through list of network credentials twice
 	static const uint8_t MAX_WIFI_CONNECT_HISTORY = 20; // NO. of wifi connectivity status to remember
+	uint16_t CONNECTION_TIMEOUT = 5000;
 
 	char _inPacketBuffer[EmotiBitPacket::MAX_TO_EMOTIBIT_PACKET_LEN + 1]; //buffer to hold incoming packet
 	EmotiBitPacket::Header _packetHeader;
@@ -77,15 +78,20 @@ public:
 #endif
 
 	uint16_t advertisingPacketCounter = 0;
+	uint16_t controlPacketCounter = 0;
+	uint16_t dataPacketCounter = 0;
 
 	int8_t setup();
 	int8_t begin(const char* ssid, const char* pass);
 	int8_t end();
 	//int8_t update();
 	int8_t processAdvertising();
+	int8_t connect(IPAddress hostIp, const String&);
+	int8_t connect(IPAddress hostIp, uint16_t controlPort, uint16_t dataPort);
+	int8_t disconnect();
 	uint8_t readControl(String& packet);
-	int8_t sendData(String& message);
 	int8_t sendControl(String& message);
+	int8_t sendData(String& message);
 	int8_t sendAdvertising(const String& message, const IPAddress& ip, const uint16_t& port);
 
 	int8_t sendUdp(WiFiUDP& udp, const String& message, const IPAddress& ip, const uint16_t& port);

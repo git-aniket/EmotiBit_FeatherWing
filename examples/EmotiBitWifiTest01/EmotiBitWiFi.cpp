@@ -113,35 +113,14 @@ int8_t EmotiBitWiFi::processAdvertising()
 				}
 				else if (_packetHeader.typeTag.equals(EmotiBitPacket::TypeTag::EMOTIBIT_CONNECT))
 				{
-					if (!_isConnected)
-					{
-						// if we aren't already connected to a computer
-						_hostIp = _advertisingCxn.remoteIP();
+					//_controlCxn.setTimeout(50);
+					//_dataCxn.setTimeout(50);
 
-						// ToDo: parse message data to obtain correct ports
-						_controlPort = 11999;
-						_dataPort = 3001;
-
-						Serial.print("\nStarting control connection to server: ");
-						Serial.print(_hostIp);
-						Serial.print(" : ");
-						Serial.print(_controlPort);
-						Serial.print(" ... ");
-						if (_controlCxn.connect(_hostIp, _controlPort))
-						{
-							_isConnected = true;
-							_controlCxn.flush();
-							Serial.println("connected");
-              
-              // ToDo: Send a message to host to confirm connection
-
-							Serial.print("Starting data connection to server: ");
-							Serial.print(_hostIp);
-							Serial.print(" : ");
-							Serial.println(_dataPort);
-							_dataCxn.begin(_dataPort);
-						}
-					}
+					// ToDo: parse message data to obtain correct ports
+					_controlPort = 11999;
+					_dataPort = 3001;
+					connect(_advertisingCxn.remoteIP(), _receivedAdvertisingMessage.substring(dataStartChar));
+					//connect(_advertisingCxn.remoteIP(), _controlPort, _dataPort);
 				}
 				if (sendMessage)
 				{
@@ -149,6 +128,11 @@ int8_t EmotiBitWiFi::processAdvertising()
 				}
 			}
 		}
+
+	}
+
+	if (_isConnected)
+	{
 
 	}
 	return SUCCESS;
@@ -193,6 +177,7 @@ uint8_t EmotiBitWiFi::readControl(String& packet)
 	uint8_t numPackets = 0;
 	if (_isConnected) 
 	{
+
 		while (_controlCxn.available()) 
 		{
 			int c = _controlCxn.read();
@@ -219,4 +204,88 @@ uint8_t EmotiBitWiFi::readControl(String& packet)
 		}
 	}
 	return numPackets;
+}
+
+int8_t EmotiBitWiFi::connect(IPAddress hostIp, const String& connectPayload) {
+
+	int16_t startChar = 0;
+	bool gotControlPort = false;
+	bool gotDataPort = false;
+	String element;
+	do
+	{
+		startChar = EmotiBitPacket::getPacketElement(connectPayload, element, startChar);
+		if (element.equals(EmotiBitPacket::PayloadLabel::CONTROL_PORT))
+		{
+			element = "";
+			startChar = EmotiBitPacket::getPacketElement(connectPayload, element, startChar);
+			if (element.length() > 0) {
+				_controlPort = element.toInt();
+				gotControlPort = true;
+			}
+		}
+		else
+		{
+			if (element.equals(EmotiBitPacket::PayloadLabel::DATA_PORT))
+			{
+				element = "";
+				startChar = EmotiBitPacket::getPacketElement(connectPayload, element, startChar);
+				if (element.length() > 0) {
+					_dataPort = element.toInt();
+					gotDataPort = true;
+				}
+			}
+		}
+	} while (startChar > -1);
+
+	if (gotControlPort & gotDataPort)
+	{
+		return connect(hostIp, _controlPort, _dataPort);
+	}
+	else
+	{
+		return FAIL;
+	}
+}
+int8_t EmotiBitWiFi::connect(IPAddress hostIp, uint16_t controlPort, uint16_t dataPort) {
+	if (!_isConnected)
+	{
+		// if we aren't already connected to a computer
+
+		Serial.print("\nStarting control connection to server: ");
+		Serial.print(hostIp);
+		Serial.print(" : ");
+		Serial.print(controlPort);
+		Serial.print(" ... ");
+		if (_controlCxn.connect(hostIp, controlPort))
+		{
+			_isConnected = true;
+			_controlCxn.flush();
+			Serial.println("connected");
+
+			// ToDo: Send a message to host to confirm connection
+
+			Serial.print("Starting data connection to server: ");
+			Serial.print(hostIp);
+			Serial.print(" : ");
+			Serial.println(dataPort);
+			_dataCxn.begin(dataPort);
+			return SUCCESS;
+		}
+	}
+	return FAIL;
+}
+
+int8_t EmotiBitWiFi::disconnect() {
+	if (_isConnected) {
+		Serial.println("Disconnecting... ");
+		Serial.println("Stopping Control Cxn... ");
+		_controlCxn.stop();
+		Serial.println("Stopping Data Cxn... ");
+		_dataCxn.stop();
+		Serial.println("Stopped... ");
+		_isConnected = false;
+		return SUCCESS;
+	}
+	return FAIL;
 }

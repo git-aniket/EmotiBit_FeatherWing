@@ -27,6 +27,8 @@ char ssid[] = SECRET_SSID;        // your network SSID (name)
 char pass[] = SECRET_PASS;    // your network password (use for WPA, or use as key for WEP)
 
 EmotiBitWiFi emotibitWifi;
+uint16_t controlPacketNumber = 0;
+uint16_t dataPacketNumber = 0;
 
 void setup() 
 {
@@ -48,8 +50,20 @@ void loop() {
 	String controlPacket;
 	while (emotibitWifi.readControl(controlPacket))
 	{
+		// ToDo: handling some packets (e.g. disconnect and ping/pong behind the scenes)
 		Serial.print("Receiving control msg: ");
 		Serial.println(controlPacket);
+		EmotiBitPacket::Header header;
+		EmotiBitPacket::getHeader(controlPacket, header);
+		if (header.typeTag.equals(EmotiBitPacket::TypeTag::EMOTIBIT_DISCONNECT))
+		{
+			emotibitWifi.disconnect();
+		}
+		if (header.typeTag.equals(EmotiBitPacket::TypeTag::PING))
+		{
+			EmotiBitPacket::Header pongHeader = EmotiBitPacket::createHeader(EmotiBitPacket::TypeTag::PONG, millis(), controlPacketNumber++);
+			emotibitWifi.sendControl(EmotiBitPacket::headerToString(pongHeader) + EmotiBitPacket::PACKET_DELIMITER_CSV);
+		}
 	}
 
   if (emotibitWifi._isConnected) {
@@ -58,7 +72,6 @@ void loop() {
 	  if (millis() - now > 1000) {
 		  now = millis();
 			Serial.print("Sending Data: ");
-			static uint16_t dataPacketNumber = 0;
 			static uint8_t data = 0;
 			EmotiBitPacket::Header header;
 			header.timestamp = millis();
