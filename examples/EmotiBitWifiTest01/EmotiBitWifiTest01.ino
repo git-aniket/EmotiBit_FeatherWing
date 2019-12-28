@@ -34,9 +34,14 @@ void setup()
 {
   //Initialize serial and wait for port to open:
   Serial.begin(9600);
+	uint32_t serialTimer = millis();
   while (!Serial) 
 	{
-    ; // wait for serial port to connect. Needed for native USB port only
+		// wait for serial port to connect. Needed for native USB port only
+		if (millis() - serialTimer > 5000)
+		{
+			break; 
+		}
   }
 	emotibitWifi.setup();
 	emotibitWifi.begin(ssid, pass);
@@ -50,7 +55,7 @@ void loop() {
 	String controlPacket;
 	while (emotibitWifi.readControl(controlPacket))
 	{
-		// ToDo: handling some packets (e.g. disconnect and ping/pong behind the scenes)
+		// ToDo: handling some packets (e.g. disconnect behind the scenes)
 		Serial.print("Receiving control msg: ");
 		Serial.println(controlPacket);
 		EmotiBitPacket::Header header;
@@ -64,7 +69,7 @@ void loop() {
   if (emotibitWifi._isConnected) {
 	  // Send data periodically
 	  static uint32_t now = millis();
-	  if (millis() - now > 1000) {
+	  if (millis() - now > 1) {
 		  now = millis();
 			Serial.print("Sending Data: ");
 			static uint8_t data = 0;

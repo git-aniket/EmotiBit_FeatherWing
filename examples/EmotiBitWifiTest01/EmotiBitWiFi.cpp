@@ -91,22 +91,12 @@ int8_t EmotiBitWiFi::processAdvertising()
 				if (_packetHeader.typeTag.equals(EmotiBitPacket::TypeTag::HELLO_EMOTIBIT))
 				{
 					EmotiBitPacket::Header outPacketHeader = EmotiBitPacket::createHeader(EmotiBitPacket::TypeTag::HELLO_HOST, millis(), advertisingPacketCounter++);
-					outMessage += EmotiBitPacket::headerToString(outPacketHeader) + EmotiBitPacket::PACKET_DELIMITER_CSV;
-					if (_isConnected)
-					{
-						outMessage += ",";
-						outMessage += EmotiBitPacket::PayloadLabel::DATA_PORT;
-						outMessage += ",";
-						outMessage += _dataPort;
-					} 
-					else 
-					{
-						outMessage += ",";
-						outMessage += EmotiBitPacket::PayloadLabel::DATA_PORT;
-						outMessage += ",";
-						outMessage += "-1";
-					}
-					outMessage += "\n";
+					outMessage += EmotiBitPacket::headerToString(outPacketHeader);
+					outMessage += ",";
+					outMessage += EmotiBitPacket::PayloadLabel::DATA_PORT;
+					outMessage += ",";
+					outMessage += _dataPort;
+					outMessage += EmotiBitPacket::PACKET_DELIMITER_CSV;
 					sendMessage = true;
 				}
 				else if (_packetHeader.typeTag.equals(EmotiBitPacket::TypeTag::EMOTIBIT_CONNECT))
@@ -124,6 +114,8 @@ int8_t EmotiBitWiFi::processAdvertising()
 						// Send a message to tell the host that the connection worked
 						outMessage += createPongPacket();
 						sendMessage = true;
+
+						connectionTimer = millis();
 					}
 				}
 				else if (_packetHeader.typeTag.equals(EmotiBitPacket::TypeTag::PING))
@@ -133,13 +125,13 @@ int8_t EmotiBitWiFi::processAdvertising()
 						String value;
 						int16_t valueChar = EmotiBitPacket::getPacketKeyedValue(_receivedAdvertisingMessage,
 							EmotiBitPacket::PayloadLabel::DATA_PORT, value, dataStartChar);
-
 						if (valueChar > -1)
 						{
 							// We found DATA_PORT in the payload
 							if (senderIp == _hostIp && value.toInt() == _dataPort)
 							{
 								// PING is from our host, reply with PONG to tell the host that we're connected
+								connectionTimer = millis();	// Refresh connection timer
 								outMessage += createPongPacket();
 								sendMessage = true;
 							}
@@ -148,6 +140,8 @@ int8_t EmotiBitWiFi::processAdvertising()
 				}
 				if (sendMessage)
 				{
+					Serial.print("Sending: ");
+					Serial.print(outMessage);
 					sendAdvertising(outMessage, senderIp, senderPort);
 				}
 			}
@@ -156,7 +150,10 @@ int8_t EmotiBitWiFi::processAdvertising()
 
 	if (_isConnected)
 	{
-
+		if (millis() - connectionTimer > connectionTimeout)
+		{
+			disconnect();
+		}
 	}
 	return SUCCESS;
 }
@@ -235,22 +232,24 @@ int8_t EmotiBitWiFi::connect(IPAddress hostIp, const String& connectPayload) {
 	bool gotDataPort = false;
 	String value;
 	int16_t valueChar;
+	uint16_t controlPort;
+	uint16_t dataPort;
 	valueChar = EmotiBitPacket::getPacketKeyedValue(connectPayload,	EmotiBitPacket::PayloadLabel::CONTROL_PORT, value);
 	if (valueChar > -1)
 	{
-		_controlPort = value.toInt();
+		controlPort = value.toInt();
 		gotControlPort = true;
 	}
 	valueChar = EmotiBitPacket::getPacketKeyedValue(connectPayload, EmotiBitPacket::PayloadLabel::DATA_PORT, value);
 	if (valueChar > -1)
 	{
-		_dataPort = value.toInt();
+		dataPort = value.toInt();
 		gotDataPort = true;
 	}
 
 	if (gotControlPort & gotDataPort)
 	{
-		return connect(hostIp, _controlPort, _dataPort);
+		return connect(hostIp, controlPort, dataPort);
 	}
 	else
 	{
@@ -272,6 +271,10 @@ int8_t EmotiBitWiFi::connect(IPAddress hostIp, uint16_t controlPort, uint16_t da
 			_isConnected = true;
 			_controlCxn.flush();
 			Serial.println("connected");
+
+			_hostIp = hostIp;
+			_dataPort = dataPort;
+			_controlPort = controlPort;
 
 			// ToDo: Send a message to host to confirm connection
 
@@ -295,6 +298,8 @@ int8_t EmotiBitWiFi::disconnect() {
 		_dataCxn.stop();
 		Serial.println("Stopped... ");
 		_isConnected = false;
+		_dataPort = -1;
+		_controlPort = -1;
 		return SUCCESS;
 	}
 	return FAIL;
@@ -307,6 +312,8 @@ String EmotiBitWiFi::createPongPacket()
 	outMessage += EmotiBitPacket::headerToString(outPacketHeader);
 	outMessage += ",";
 	outMessage += EmotiBitPacket::PayloadLabel::DATA_PORT;
+	outMessage += ",";
 	outMessage += _dataPort;
 	outMessage += EmotiBitPacket::PACKET_DELIMITER_CSV;
+	return outMessage;
 }

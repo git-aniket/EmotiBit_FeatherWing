@@ -44,8 +44,8 @@ public:
 	//};
 
 	uint16_t _advertisingPort = EmotiBitComms::WIFI_ADVERTISING_PORT;	// Port to advertise EmotiBits on the network
-	uint16_t _controlPort;								// Port to toggle EmotiBit controls
-	uint16_t _dataPort;								// Port to sent EmotiBit data
+	int32_t _controlPort = -1;								// Port to toggle EmotiBit controls
+	int32_t _dataPort = -1;								// Port to sent EmotiBit data
 
 	IPAddress _hostIp;
 
@@ -63,10 +63,12 @@ public:
 	static const uint8_t FAIL = -1;
 	static const uint16_t MAX_SEND_LEN = 512;
 	static const uint32_t WIFI_BEGIN_ATTEMPT_DELAY = 5000;
-	static const uint32_t WIFI_BEGIN_SWITCH_CRED = 300000;      //Set to 30000 for debug, 300000 for Release
-	static const uint32_t SETUP_TIMEOUT = 61500;          //Enough time to run through list of network credentials twice
+	static const uint32_t WIFI_BEGIN_SWITCH_CRED = 300000;      // Set to 30000 for debug, 300000 for Release
+	static const uint32_t SETUP_TIMEOUT = 61500;          // Enough time to run through list of network credentials twice
 	static const uint8_t MAX_WIFI_CONNECT_HISTORY = 20; // NO. of wifi connectivity status to remember
-	uint16_t CONNECTION_TIMEOUT = 5000;
+	uint32_t connectionTimer;
+	uint16_t connectionTimeout = 10000;	// if no PING for specified timeout sets _isConnected = false & calls disconnect()
+	//uint16_t wifiTimeout = 20000;	// if no WiFi connection after timeout we disconnect from WiFi and tries to connect to one on our list 
 
 	char _inPacketBuffer[EmotiBitPacket::MAX_TO_EMOTIBIT_PACKET_LEN + 1]; //buffer to hold incoming packet
 	EmotiBitPacket::Header _packetHeader;
