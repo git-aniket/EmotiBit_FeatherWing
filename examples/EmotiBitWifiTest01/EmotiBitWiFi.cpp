@@ -107,7 +107,6 @@ int8_t EmotiBitWiFi::processAdvertising()
 					if (!_isConnected)
 					{
 						connect(_advertisingCxn.remoteIP(), _receivedAdvertisingMessage.substring(dataStartChar));
-						//connect(_advertisingCxn.remoteIP(), _controlPort, _dataPort);
 					}
 					if (_isConnected)
 					{

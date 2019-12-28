@@ -75,7 +75,6 @@ void loop() {
 			static uint8_t data = 0;
 			String packet = EmotiBitPacket::createPacket(EmotiBitPacket::TypeTag::DEBUG, dataPacketNumber++, String(data++), 1);
 			//Serial.print(packet);
-			Serial.print("+");
 			emotibitWifi.sendData(packet);
 	  }
   }
