@@ -71,10 +71,11 @@ void loop() {
 	  static uint32_t now = millis();
 	  if (millis() - now > 1) {
 		  now = millis();
-			Serial.print("Sending Data: ");
+			//Serial.print("Sending Data: ");
 			static uint8_t data = 0;
 			String packet = EmotiBitPacket::createPacket(EmotiBitPacket::TypeTag::DEBUG, dataPacketNumber++, String(data++), 1);
-			Serial.print(packet);
+			//Serial.print(packet);
+			Serial.print("+");
 			emotibitWifi.sendData(packet);
 	  }
   }
