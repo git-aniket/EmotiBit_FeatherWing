@@ -28,7 +28,11 @@ char pass[] = SECRET_PASS;    // your network password (use for WPA, or use as k
 
 EmotiBitWiFi emotibitWifi;
 uint16_t controlPacketNumber = 0;
-uint16_t dataPacketNumber = 0;
+String dataMessage;
+const uint16_t DATA_SEND_INTERVAL = 100;
+const uint16_t DATA_MESSAGE_RESERVE_SIZE = 4096;
+
+
 
 void setup() 
 {
@@ -43,43 +47,51 @@ void setup()
 			break; 
 		}
   }
+
+	dataMessage.reserve(DATA_MESSAGE_RESERVE_SIZE);
+
 	emotibitWifi.setup();
 	emotibitWifi.begin(ssid, pass);
 	printWiFiStatus();
 }
 
-void loop() {
-	emotibitWifi.processAdvertising();
-
-	// Read control packets
-	String controlPacket;
-	while (emotibitWifi.readControl(controlPacket))
-	{
-		// ToDo: handling some packets (e.g. disconnect behind the scenes)
-		Serial.print("Receiving control msg: ");
-		Serial.println(controlPacket);
-		EmotiBitPacket::Header header;
-		EmotiBitPacket::getHeader(controlPacket, header);
-		if (header.typeTag.equals(EmotiBitPacket::TypeTag::EMOTIBIT_DISCONNECT))
-		{
-			emotibitWifi.disconnect();
-		}
-	}
+void loop() { 
+	emotibitWifi.update(dataMessage);
+	Serial.print(dataMessage);
 
   if (emotibitWifi._isConnected) {
+		// Read control packets
+		String controlPacket;
+		while (emotibitWifi.readControl(controlPacket))
+		{
+			// ToDo: handling some packets (e.g. disconnect behind the scenes)
+			Serial.print("Receiving control msg: ");
+			Serial.println(controlPacket);
+			EmotiBitPacket::Header header;
+			EmotiBitPacket::getHeader(controlPacket, header);
+			if (header.typeTag.equals(EmotiBitPacket::TypeTag::EMOTIBIT_DISCONNECT))
+			{
+				emotibitWifi.disconnect();
+			}
+			dataMessage += controlPacket;
+		}
+
 	  // Send data periodically
-	  static uint32_t now = millis();
-	  if (millis() - now > 1) {
-		  now = millis();
-			//Serial.print("Sending Data: ");
-			static uint8_t data = 0;
-			String packet = EmotiBitPacket::createPacket(EmotiBitPacket::TypeTag::DEBUG, dataPacketNumber++, String(data++), 1);
-			//Serial.print(packet);
-			emotibitWifi.sendData(packet);
+	  static uint32_t dataSendTimer = millis();
+	  if (millis() - dataSendTimer > DATA_SEND_INTERVAL) {
+			dataSendTimer = millis();
+			String data = "0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6,7,8,9";
+			static uint16_t counter = 0;
+			for (int i = 0; i < 20; i++)
+			{
+				dataMessage += EmotiBitPacket::createPacket(EmotiBitPacket::TypeTag::DEBUG, emotibitWifi.dataPacketCounter++, data, 50);
+			}
+
+			emotibitWifi.sendData(dataMessage);
+			dataMessage = "";
 	  }
   }
 }
-
 
 void printWiFiStatus() {
 	// print the SSID of the network you're attached to:

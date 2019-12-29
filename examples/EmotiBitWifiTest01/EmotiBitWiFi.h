@@ -56,16 +56,19 @@ public:
 	bool _isConnected = false;
 	int _wifiStatus = WL_IDLE_STATUS;
 	int _keyIndex = 0;            // your network key Index number (needed only for WEP)
-	bool gotIp = false;
-	uint8_t _nUdpSends = 1; // Number of times to send the same packet (e.g. for UDPx3 = 3)
+	//bool gotIp = false;
+	uint8_t _nDataSends = 1; // Number of times to send the same packet (e.g. for UDPx3 = 3)
 
+	static const bool DEBUG_PRINT = false;
 	static const uint8_t SUCCESS = 0;
 	static const uint8_t FAIL = -1;
-	static const uint16_t MAX_SEND_LEN = 512;
+	static const uint16_t MAX_SEND_LEN = 512;							// messages longer than this will be broken up into multiple sends
 	static const uint32_t WIFI_BEGIN_ATTEMPT_DELAY = 5000;
-	static const uint32_t WIFI_BEGIN_SWITCH_CRED = 300000;      // Set to 30000 for debug, 300000 for Release
+	static const uint32_t WIFI_BEGIN_SWITCH_CRED = 300000;// Set to 30000 for debug, 300000 for Release
 	static const uint32_t SETUP_TIMEOUT = 61500;          // Enough time to run through list of network credentials twice
-	static const uint8_t MAX_WIFI_CONNECT_HISTORY = 20; // NO. of wifi connectivity status to remember
+	static const uint8_t MAX_WIFI_CONNECT_HISTORY = 20;		// NO. of wifi connectivity status to remember
+	static const uint16_t TIME_SYNC_INTERVAL = 5107;			// milliseconds between time syncs
+	static const uint16_t MAX_SYNC_WAIT_INTERVAL = 100;		// milliseconds to wait for time sync ACK
 	uint32_t connectionTimer;
 	uint16_t connectionTimeout = 10000;	// if no PING for specified timeout sets _isConnected = false & calls disconnect()
 	//uint16_t wifiTimeout = 20000;	// if no WiFi connection after timeout we disconnect from WiFi and tries to connect to one on our list 
@@ -73,7 +76,7 @@ public:
 	char _inPacketBuffer[EmotiBitPacket::MAX_TO_EMOTIBIT_PACKET_LEN + 1]; //buffer to hold incoming packet
 	EmotiBitPacket::Header _packetHeader;
 #ifdef ARDUINO
-	String _receivedAdvertisingMessage = ""; 
+	String _receivedAdvertisingPacket = "";
 	String _receivedControlMessage = "";
 #else
 
@@ -84,19 +87,21 @@ public:
 	uint16_t dataPacketCounter = 0;
 
 	int8_t setup();
-	int8_t begin(const char* ssid, const char* pass);
+	int8_t begin(const char *ssid, const char *pass);
 	int8_t end();
-	//int8_t update();
-	int8_t processAdvertising();
-	int8_t connect(IPAddress hostIp, const String&);
+	int8_t update(String &logPackets);	// Handles advertising and time syncing. Can take up to 
+	int8_t processAdvertising(String &logPackets);
+	int8_t connect(IPAddress hostIp, const String &connectPayload);
 	int8_t connect(IPAddress hostIp, uint16_t controlPort, uint16_t dataPort);
 	int8_t disconnect();
-	uint8_t readControl(String& packet);
-	int8_t sendControl(String& message);
-	int8_t sendData(String& message);
-	int8_t sendAdvertising(const String& message, const IPAddress& ip, const uint16_t& port);
+	uint8_t readControl(String &packet);
+	int8_t sendControl(String &message);
+	int8_t sendData(String &message);
+	int8_t readUdp(WiFiUDP &udp, String &message);
+	int8_t sendAdvertising(const String& message, const IPAddress &ip, const uint16_t &port);
+	int8_t processTimeSync(String &logPackets);
 
-	int8_t sendUdp(WiFiUDP& udp, const String& message, const IPAddress& ip, const uint16_t& port);
+	int8_t sendUdp(WiFiUDP &udp, const String& message, const IPAddress &ip, const uint16_t &port);
 
 	String createPongPacket();
 };
