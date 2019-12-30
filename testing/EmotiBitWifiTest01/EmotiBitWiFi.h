@@ -15,7 +15,8 @@
 ///   - in setup():
 ///		  - Call EmotiBitWiFi.begin(ssid, password) in setup() to setup WiFi+advertising connection
 ///   - in loop():
-///		  - Call EmotiBitWifi.processAdvertising() to handle advertising and connection requests
+///		  - Call EmotiBitWifi.update() to handle advertising, connection requests and time syncing
+///				- Note that this can take up to MAX_SYNC_WAIT_INTERVAL (default 100 msec)
 ///     - Call emotibitWifi.readControl(String& controlPacket) to read an incoming control packet
 ///     - Call emotibitWifi.sendData(String& data) to send data
 ///	Typical program flow (behind the scenes)
@@ -37,11 +38,18 @@
 
 class EmotiBitWiFi {
 public:
-	//typedef struct Credential
-	//{
-	//	String ssid = "";
-	//	String password = "";
-	//};
+	typedef struct Credential
+	{
+		String ssid = "";
+		String pass = "";
+	};
+	static const uint8_t MAX_CREDENTIALS = 12;
+	Credential credentials[MAX_CREDENTIALS];
+	uint8_t currentCredential = 0;
+	uint8_t numCredentials = 0;
+	uint32_t wifiBeginStart;
+	const uint8_t MAX_WIFI_RECONNECT_ATTEMPTS = 2;
+
 
 	uint16_t _advertisingPort = EmotiBitComms::WIFI_ADVERTISING_PORT;	// Port to advertise EmotiBits on the network
 	int32_t _controlPort = -1;								// Port to toggle EmotiBit controls
@@ -87,21 +95,25 @@ public:
 	uint16_t dataPacketCounter = 0;
 
 	int8_t setup();
-	int8_t begin(const char *ssid, const char *pass);
+	uint8_t begin(uint16_t timeout = 61500, uint16_t attemptDelay = 1000);
+	//uint8_t begin(uint8_t credentialIndex, uint8_t maxAttempts = 10, uint16_t attemptDelay = 1000);
+	uint8_t begin(String ssid, String pass, uint8_t maxAttempts = 10, uint16_t attemptDelay = 1000);
 	int8_t end();
-	int8_t update(String &logPackets);	// Handles advertising and time syncing. Can take up to 
-	int8_t processAdvertising(String &logPackets);
+	int8_t updateWiFi();
 	int8_t connect(IPAddress hostIp, const String &connectPayload);
 	int8_t connect(IPAddress hostIp, uint16_t controlPort, uint16_t dataPort);
 	int8_t disconnect();
+	int8_t update(String &logPackets);	// Handles advertising and time syncing. Can take up to 
+	int8_t processAdvertising(String &logPackets);
 	uint8_t readControl(String &packet);
 	int8_t sendControl(String &message);
 	int8_t sendData(String &message);
 	int8_t readUdp(WiFiUDP &udp, String &message);
 	int8_t sendAdvertising(const String& message, const IPAddress &ip, const uint16_t &port);
-	int8_t processTimeSync(String &logPackets);
-
+	int8_t processTimeSync(String &syncPackets);
 	int8_t sendUdp(WiFiUDP &udp, const String& message, const IPAddress &ip, const uint16_t &port);
-
 	String createPongPacket();
+	void setTimeSyncInterval(uint32_t interval);
+	int8_t addCredential(String ssid, String password);
+	void printWiFiStatus();
 };

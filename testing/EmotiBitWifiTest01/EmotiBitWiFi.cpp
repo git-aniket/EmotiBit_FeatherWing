@@ -16,21 +16,51 @@ int8_t EmotiBitWiFi::setup()
 	return SUCCESS;
 }
 
-int8_t EmotiBitWiFi::begin(const char* ssid, const char* pass)
+uint8_t EmotiBitWiFi::begin(uint16_t timeout, uint16_t attemptDelay)
+{
+	uint8_t status = WL_IDLE_STATUS;
+	uint32_t startBegin = millis();
+
+	while (status != WL_CONNECTED)
+	{
+		if (millis() - startBegin > timeout)
+		{
+			Serial.println("*********** EmotiBitWiFi.begin() Timeout ***********");
+			break;
+		}
+		if (numCredentials == 0)
+		{
+			Serial.println("NO WIFI CREDENTIALS FOUND");
+		}
+		else
+		{
+			currentCredential = (currentCredential + 1) % numCredentials;
+			Serial.println("<<<<<<< Switching WiFi Networks >>>>>>>");
+			status = begin(credentials[currentCredential].ssid, credentials[currentCredential].pass, 1);
+			if (status == WL_CONNECTED) {
+				break;
+			}
+		}
+	}
+	return status;
+}
+
+//uint8_t EmotiBitWiFi::begin(uint8_t credentialIndex, uint8_t maxAttempts, uint16_t attemptDelay)
+//{
+//	if (credentialIndex < numCredentials) {
+//		return begin(credentials->ssid, credentials->password);
+//	}
+//	return WL_CONNECT_FAILED;
+//}
+
+uint8_t EmotiBitWiFi::begin(String ssid, String pass, uint8_t maxAttempts, uint16_t attemptDelay)
 {
 	int8_t status;
-	uint16_t timeout = 10000;
-	uint32_t now = millis();
-
-	//status = setup();
-	//if (setup() != SUCCESS)
-	//{
-	//	return status;
-	//}
+	int8_t attempt = 0;
 
 	while (status != WL_CONNECTED) 
 	{
-		if (millis() - now > timeout)
+		if (attempt > maxAttempts)
 		{
 			return status;
 		}
@@ -38,30 +68,78 @@ int8_t EmotiBitWiFi::begin(const char* ssid, const char* pass)
 		Serial.println(ssid);
 		// ToDo: Add WEP support
 		status = WiFi.begin(ssid, pass);
-		delay(1000);
+		delay(attemptDelay);
+		attempt++;
 	}
-	WiFi.setTimeout(15);
+	WiFi.setTimeout(25);
+	wifiBeginStart = millis();
 	Serial.println("Connected to WiFi");
+	printWiFiStatus();
 
 	Serial.print("Starting EmotiBit advertising connection on port ");
 	Serial.println(_advertisingPort);
 	_advertisingCxn.begin(_advertisingPort);
 
-	return SUCCESS;
+	return status;
 }
 
-//
-//int8_t EmotiBitWiFi::update()
-//{
-//	int8_t status = SUCCESS;
-//	if (status == SUCCESS) {
-//		status = processAdvertising();
-//	}
-//	if (status == SUCCESS) {
-//		status == processControl();
-//	}
-//	return status;
-//}
+int8_t EmotiBitWiFi::end()
+{
+	if (WiFi.status() == WL_CONNECTED) {
+		Serial.println("Disconnecting WiFi...");
+		WiFi.disconnect();
+	}
+	Serial.println("Ending WiFi...");
+	WiFi.end();
+}
+
+int8_t EmotiBitWiFi::updateWiFi()
+{
+	int wifiStatus = WiFi.status();
+	if (wifiStatus != WL_CONNECTED)
+	{
+		static bool getLostWifiTime = true;
+		static uint32_t lostWifiTime;
+
+		if (getLostWifiTime) {
+			lostWifiTime = millis();
+			getLostWifiTime = false;
+			//DBTAG1
+			//addDebugPacket((uint8_t)EmotiBit::DebugTags::WIFI_TIMELOSTCONN, lostWifiTime);// for reporting Wifi Lost moment
+		}
+
+		static uint8_t wifiReconnectAttempts = 0;
+		if (millis() - wifiBeginStart > WIFI_BEGIN_ATTEMPT_DELAY)
+		{
+			bool switchCredentials = false;
+			if ((millis() - lostWifiTime > WIFI_BEGIN_SWITCH_CRED) && (wifiReconnectAttempts >= MAX_WIFI_RECONNECT_ATTEMPTS))
+			{
+				switchCredentials = true;
+				wifiReconnectAttempts = 0;
+				//gotIP = false;
+				//sendResetPacket = true;
+			}
+
+			if (switchCredentials && numCredentials > 0)
+			{
+				currentCredential = (currentCredential + 1) % numCredentials;
+				Serial.println("<<<<<<< Switching WiFi Networks >>>>>>>");
+			}
+			Serial.print("WIFI_BEGIN_ATTEMPT_DELAY: ");
+			Serial.println(WIFI_BEGIN_ATTEMPT_DELAY);
+			//Serial.println(lostWifiTime);               //uncomment for debugging
+			wifiStatus = begin(credentials[currentCredential].ssid, credentials[currentCredential].pass, 1, 0);
+			wifiReconnectAttempts++;
+			wifiBeginStart = millis();
+		}
+		if (wifiStatus == WL_CONNECTED) {
+			getLostWifiTime = true;
+			//For case where begin works immediately in this loop, but disconnects again within
+			// the attempt delay. Without changing nBS, the code is blocked from attempting to reconnect
+			wifiBeginStart = millis() - WIFI_BEGIN_ATTEMPT_DELAY - 1;
+		}
+	}
+}
 
 int8_t EmotiBitWiFi::readUdp(WiFiUDP &udp, String &message)
 {
@@ -334,6 +412,8 @@ String EmotiBitWiFi::createPongPacket()
 
 int8_t EmotiBitWiFi::update(String &logPackets)
 {
+	updateWiFi();
+
 	processAdvertising(logPackets);
 
 	if (_isConnected)
@@ -410,4 +490,31 @@ int8_t EmotiBitWiFi::processTimeSync(String &logPackets)
 		}
 	}
 	return FAIL;
+}
+
+void EmotiBitWiFi::printWiFiStatus() {
+	// print the SSID of the network you're attached to:
+	Serial.print("SSID: ");
+	Serial.println(WiFi.SSID());
+
+	// print your WiFi shield's IP address:
+	IPAddress ip = WiFi.localIP();
+	Serial.print("IP Address: ");
+	Serial.println(ip);
+
+	// print the received signal strength:
+	long rssi = WiFi.RSSI();
+	Serial.print("signal strength (RSSI):");
+	Serial.print(rssi);
+	Serial.println(" dBm");
+}
+
+int8_t EmotiBitWiFi::addCredential(String ssid, String password)
+{
+	if (numCredentials < MAX_CREDENTIALS)
+	{
+		credentials[numCredentials].ssid = ssid;
+		credentials[numCredentials].pass = password;
+		numCredentials++;
+	}
 }
