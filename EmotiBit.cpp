@@ -1492,7 +1492,7 @@ bool EmotiBit::printConfigInfo(File &file, const String &datetimeString) {
 	String source_id = "EmotiBit FeatherWing";
 	int hardware_version = (int)_version;
 	String feather_version = "Adafruit Feather M0 WiFi";
-	String firmware_version = "1.0.11";
+	String firmware_version = "1.0.12";
 
 	const uint16_t bufferSize = 1024;
 
@@ -1906,78 +1906,6 @@ void EmotiBit::readSensors()
 	Serial.println("readSensors()");
 #endif // DEBUG
 
-	// LED STATUS CHANGE SEGMENT
-	static uint16_t ledCounter = 0;
-	ledCounter++;
-	/*Serial.print("ledCounter:");
-	Serial.println(ledCounter);*/
-	if (ledCounter == LED_REFRESH_DIV) 
-	{
-		ledCounter = 0;
-		// Serial.println("Time to update LED");
-		if (_emotiBitWiFi.isConnected())
-		{
-			led.setLED(uint8_t(EmotiBit::Led::BLUE), true);
-		}
-		else
-		{
-			led.setLED(uint8_t(EmotiBit::Led::BLUE), false);
-		}
-
-		//static bool battLed = false;
-		if (battIndicationSeq) 
-		{
-			static uint32_t BattLedstatusChangeTime = millis();
-			if (millis() - BattLedstatusChangeTime > BattLedDuration)
-			{
-				led.setLED(uint8_t(EmotiBit::Led::YELLOW), !led.getLED(uint8_t(EmotiBit::Led::YELLOW)));
-			}
-			//if (battLed && millis() - BattLedstatusChangeTime > BattLedDuration) 
-			//{
-			//	led.setLED(uint8_t(EmotiBit::Led::YELLOW), false);
-			//	battLed = false;
-			//	BattLedstatusChangeTime = millis();
-			//}
-			//else if (!battLed && millis() - BattLedstatusChangeTime > BattLedDuration) 
-			//{
-			//	led.setLED(uint8_t(EmotiBit::Led::YELLOW), true);
-			//	battLed = true;
-			//	BattLedstatusChangeTime = millis();
-			//}
-		}
-		else 
-		{
-			led.setLED(uint8_t(EmotiBit::Led::YELLOW), false);
-			//battLed = false;
-		}
-
-		//static bool recordLedStatus = false;
-		if (_sdWrite) 
-		{
-			static uint32_t recordBlinkDuration = millis();
-			if (millis() - recordBlinkDuration >= 500) 
-			{
-				//if (recordLedStatus == true) 
-				//{
-				//	led.setLED(uint8_t(EmotiBit::Led::RED), false);
-				//	recordLedStatus = false;
-				//}
-				//else 
-				//{
-				//	led.setLED(uint8_t(EmotiBit::Led::RED), true);
-				//	recordLedStatus = true;
-				//}
-				led.setLED(uint8_t(EmotiBit::Led::RED), !led.getLED(uint8_t(EmotiBit::Led::RED)));
-				recordBlinkDuration = millis();
-			}
-		}
-		else if (!_sdWrite && led.getLED(uint8_t(EmotiBit::Led::RED)) == true)
-		{
-			led.setLED(uint8_t(EmotiBit::Led::RED), false);
-			// recordLedStatus = false;
-		}
-	}
-
 	// EDA
 	if (acquireData.eda) {
 		static uint16_t edaCounter = 0;
@@ -1988,62 +1916,140 @@ void EmotiBit::readSensors()
 		}
 	}
 
-	// Temperature / Humidity Sensor
-	if (acquireData.tempHumidity) {
-		static uint16_t temperatureCounter = 0;
-		temperatureCounter++;
-		if (temperatureCounter == TEMPERATURE_SAMPLING_DIV) {
-			// Note: Temperature/humidity and the thermistor are alternately sampled 
-			// on every other call of updateTempHumidityData()
-			// I.e. you must call updateTempHumidityData() 2x with a sufficient measurement 
-			// delay between calls to sample both temperature/humidity and the thermistor
-			int8_t tempStatus = updateTempHumidityData();
-			//if (dataStatus.tempHumidity == 0) {
-			//	dataStatus.tempHumidity = tempStatus;
-			//}
-			temperatureCounter = 0;
-		}
-	}
+	if (getPowerMode() != PowerMode::HIBERNATE) // enables A/B testing analog noise on EDA
+	{
 
-	// Thermopile
-	if (acquireData.tempHumidity) {
-		static uint16_t thermopileCounter = 0;
-		thermopileCounter++;
-		if (thermopileCounter == THERMOPILE_SAMPLING_DIV) {
-			int8_t tempStatus = updateThermopileData();
-			thermopileCounter = 0;
-		}
-	}
+		// LED STATUS CHANGE SEGMENT
+		static uint16_t ledCounter = 0;
+		ledCounter++;
+		/*Serial.print("ledCounter:");
+		Serial.println(ledCounter);*/
+		if (ledCounter == LED_REFRESH_DIV)
+		{
+			ledCounter = 0;
+			// Serial.println("Time to update LED");
+			if (_emotiBitWiFi.isConnected())
+			{
+				led.setLED(uint8_t(EmotiBit::Led::BLUE), true);
+			}
+			else
+			{
+				led.setLED(uint8_t(EmotiBit::Led::BLUE), false);
+			}
 
-	// IMU
-	if (acquireData.imu) {
-		static uint16_t imuCounter = 0;
-		imuCounter++;
-		if (imuCounter == IMU_SAMPLING_DIV) {
-			int8_t tempStatus = updateIMUData();
-			imuCounter = 0;
-		}
-	}
+			//static bool battLed = false;
+			if (battIndicationSeq)
+			{
+				static uint32_t BattLedstatusChangeTime = millis();
+				if (millis() - BattLedstatusChangeTime > BattLedDuration)
+				{
+					led.setLED(uint8_t(EmotiBit::Led::YELLOW), !led.getLED(uint8_t(EmotiBit::Led::YELLOW)));
+				}
+				//if (battLed && millis() - BattLedstatusChangeTime > BattLedDuration) 
+				//{
+				//	led.setLED(uint8_t(EmotiBit::Led::YELLOW), false);
+				//	battLed = false;
+				//	BattLedstatusChangeTime = millis();
+				//}
+				//else if (!battLed && millis() - BattLedstatusChangeTime > BattLedDuration) 
+				//{
+				//	led.setLED(uint8_t(EmotiBit::Led::YELLOW), true);
+				//	battLed = true;
+				//	BattLedstatusChangeTime = millis();
+				//}
+			}
+			else
+			{
+				led.setLED(uint8_t(EmotiBit::Led::YELLOW), false);
+				//battLed = false;
+			}
 
-	// PPG
-	if (acquireData.ppg) {
-		static uint16_t ppgCounter = 0;
-		ppgCounter++;
-		if (ppgCounter == PPG_SAMPLING_DIV) {
-			int8_t tempStatus = updatePPGData();
-			ppgCounter = 0;
+			//static bool recordLedStatus = false;
+			if (_sdWrite)
+			{
+				static uint32_t recordBlinkDuration = millis();
+				if (millis() - recordBlinkDuration >= 500)
+				{
+					//if (recordLedStatus == true) 
+					//{
+					//	led.setLED(uint8_t(EmotiBit::Led::RED), false);
+					//	recordLedStatus = false;
+					//}
+					//else 
+					//{
+					//	led.setLED(uint8_t(EmotiBit::Led::RED), true);
+					//	recordLedStatus = true;
+					//}
+					led.setLED(uint8_t(EmotiBit::Led::RED), !led.getLED(uint8_t(EmotiBit::Led::RED)));
+					recordBlinkDuration = millis();
+				}
+			}
+			else if (!_sdWrite && led.getLED(uint8_t(EmotiBit::Led::RED)) == true)
+			{
+				led.setLED(uint8_t(EmotiBit::Led::RED), false);
+				// recordLedStatus = false;
+			}
 		}
-	}
 
-	// Battery (all analog reads must be in the ISR)
-	// TODO: use the stored BAtt value instead of calling readBatteryPercent again
-	static uint16_t batteryCounter = 0;
-	batteryCounter++;
-	if (batteryCounter == BATTERY_SAMPLING_DIV) {
-		battLevel = readBatteryPercent();
-		updateBatteryIndication();
-		updateBatteryPercentData();
-		batteryCounter = 0;
+
+
+		// Temperature / Humidity Sensor
+		if (acquireData.tempHumidity) {
+			static uint16_t temperatureCounter = 0;
+			temperatureCounter++;
+			if (temperatureCounter == TEMPERATURE_SAMPLING_DIV) {
+				// Note: Temperature/humidity and the thermistor are alternately sampled 
+				// on every other call of updateTempHumidityData()
+				// I.e. you must call updateTempHumidityData() 2x with a sufficient measurement 
+				// delay between calls to sample both temperature/humidity and the thermistor
+				int8_t tempStatus = updateTempHumidityData();
+				//if (dataStatus.tempHumidity == 0) {
+				//	dataStatus.tempHumidity = tempStatus;
+				//}
+				temperatureCounter = 0;
+			}
+		}
+
+		// Thermopile
+		if (acquireData.tempHumidity) {
+			static uint16_t thermopileCounter = 0;
+			thermopileCounter++;
+			if (thermopileCounter == THERMOPILE_SAMPLING_DIV) {
+				int8_t tempStatus = updateThermopileData();
+				thermopileCounter = 0;
+			}
+		}
+
+		// IMU
+		if (acquireData.imu) {
+			static uint16_t imuCounter = 0;
+			imuCounter++;
+			if (imuCounter == IMU_SAMPLING_DIV) {
+				int8_t tempStatus = updateIMUData();
+				imuCounter = 0;
+			}
+		}
+
+		// PPG
+		if (acquireData.ppg) {
+			static uint16_t ppgCounter = 0;
+			ppgCounter++;
+			if (ppgCounter == PPG_SAMPLING_DIV) {
+				int8_t tempStatus = updatePPGData();
+				ppgCounter = 0;
+			}
+		}
+
+		// Battery (all analog reads must be in the ISR)
+		// TODO: use the stored BAtt value instead of calling readBatteryPercent again
+		static uint16_t batteryCounter = 0;
+		batteryCounter++;
+		if (batteryCounter == BATTERY_SAMPLING_DIV) {
+			battLevel = readBatteryPercent();
+			updateBatteryIndication();
+			updateBatteryPercentData();
+			batteryCounter = 0;
+		}
 	}
 }
 
