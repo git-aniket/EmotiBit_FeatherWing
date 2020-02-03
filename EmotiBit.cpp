@@ -765,6 +765,7 @@ void EmotiBit::updateButtonPress()
 			Serial.print("onLongPress: ");
 			Serial.println(millis() - buttonPressedTimer);
 			// ToDo: Send BL packet
+			buttonPressedTimer = millis();	// reset the timer until the button is pressed
 			(onLongPressCallback());
 		}
 	}
@@ -870,6 +871,7 @@ uint8_t EmotiBit::update()
 		_outDataPackets = "";
 
 		hibernate();
+		setPowerMode(PowerMode::NORMAL_POWER);
 	}
 }
 
@@ -1916,7 +1918,7 @@ void EmotiBit::readSensors()
 		}
 	}
 
-	if (getPowerMode() != PowerMode::HIBERNATE) // enables A/B testing analog noise on EDA
+	if (!_digitalShutdown) // enables A/B testing analog noise on EDA
 	{
 
 		// LED STATUS CHANGE SEGMENT
@@ -2076,66 +2078,56 @@ int EmotiBit::freeMemory() {
 
 // NEW Hibernate
 void EmotiBit::hibernate() {
+	_digitalShutdown = true;
+
+	delay(100);
+
 	Serial.println("hibernate()");
-	Serial.println("Stopping timer...");
-	stopTimer();
+	//Serial.println("Stopping timer...");
+	//stopTimer();
+
+	led.setLED(uint8_t(EmotiBit::Led::RED), false);
+	led.setLED(uint8_t(EmotiBit::Led::BLUE), false);
+	led.setLED(uint8_t(EmotiBit::Led::YELLOW), false);
 
 	//PPGToggle
 	// For an unknown reason, this need to be before WiFi diconnect/end
 	Serial.println("Shutting down ppg...");
 	ppgSensor.shutDown();
 
-	Serial.println("Ending WiFi...");
-	_emotiBitWiFi.end();
+	//Serial.println("Ending WiFi...");
+	//_emotiBitWiFi.end();
 
 	//IMU Suspend Mode
 	Serial.println("Suspending IMU...");
 	BMI160.suspendIMU();
 
+	Serial.println("Sleeping Thermopile...");
+	thermopile.sleepMode();
+
 	SPI.end(); // shutdown the SPI interface
 	Wire.end();
 	_EmotiBit_i2c->end();
 
-	//pinMode(_sdCardChipSelectPin, OUTPUT);//cs
-	//digitalWrite(_sdCardChipSelectPin, LOW);
-	//pinMode(PIN_SPI_MISO, OUTPUT);
-	//digitalWrite(PIN_SPI_MISO, LOW);
-	//pinMode(PIN_SPI_MOSI, OUTPUT);
-	//digitalWrite(PIN_SPI_MOSI, LOW);
-	//pinMode(PIN_SPI_SCK, OUTPUT);
-	//digitalWrite(PIN_SPI_SCK, LOW);
+	Serial.println("digital shutdown complete");
+	
+	// Setup all pins (digital and analog) in INPUT mode (default is nothing)  
+	//for (uint32_t ul = 0; ul < PINS_COUNT; ul++)
+	//{
+	//	if (ul != _hibernatePin) {
+	//		pinMode(ul, OUTPUT);
+	//		digitalWrite(ul, LOW);
+	//		pinMode(ul, INPUT);
+	//	}
+	//}
 
-	//pinMode(PIN_WIRE_SCL, OUTPUT);
-	//digitalWrite(PIN_WIRE_SCL, LOW);
-	//pinMode(PIN_WIRE_SDA, OUTPUT);
-	//digitalWrite(PIN_WIRE_SDA, LOW);
+	//Serial.println("Disabling MOSFET ");
+	//pinMode(_hibernatePin, OUTPUT);
+	//digitalWrite(_hibernatePin, HIGH);
 
-	//pinMode(PIN_UART, OUTPUT);
-	//digitalWrite(PIN_WIRE_SCL, LOW);
-	//pinMode(PIN_WIRE_SDA, OUTPUT);
-	//digitalWrite(PIN_WIRE_SDA, LOW);
-
-	/*while (ledPinBusy)*/
-
-		// Setup all pins (digital and analog) in INPUT mode (default is nothing)  
-		//for (uint32_t ul = 0; ul < NUM_DIGITAL_PINS; ul++)
-	for (uint32_t ul = 0; ul < PINS_COUNT; ul++)
-	{
-		if (ul != _hibernatePin) {
-			pinMode(ul, OUTPUT);
-			digitalWrite(ul, LOW);
-			pinMode(ul, INPUT);
-		}
-	}
-
-	//GSRToggle, write 1 to the PMO
-	Serial.println("Disabling MOSFET ");
-	pinMode(_hibernatePin, OUTPUT);
-	digitalWrite(_hibernatePin, HIGH);
-
-	//deepSleep();
-	Serial.println("Entering deep sleep...");
-	LowPower.deepSleep();
+	////deepSleep();
+	//Serial.println("Entering deep sleep...");
+	//LowPower.deepSleep();
 }
 
 
@@ -2235,7 +2227,7 @@ void EmotiBit::setPowerMode(PowerMode mode)
 {
 	_powerMode = mode;
 	String modePacket;
-	sendModePacket(modePacket, _outDataPacketCounter);
+	//sendModePacket(modePacket, _outDataPacketCounter);
 	if (getPowerMode() == PowerMode::NORMAL_POWER)
 	{
 		Serial.println("PowerMode::NORMAL_POWER");
@@ -2274,6 +2266,8 @@ void EmotiBit::setPowerMode(PowerMode mode)
 	else if (getPowerMode() == PowerMode::HIBERNATE)
 	{
 		Serial.println("PowerMode::HIBERNATE");
+		hibernate();
+		_powerMode = PowerMode::NORMAL_POWER;
 	}
 	else
 	{

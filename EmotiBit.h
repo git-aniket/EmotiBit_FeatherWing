@@ -274,6 +274,7 @@ public:
 	bool _sendTestData = false;
 	float _edlDigFiltAlpha = 0;
 	float _edlDigFilteredVal = -1;
+	bool _digitalShutdown = false;
 
 	void setupSdCard();
 	void updateButtonPress();
