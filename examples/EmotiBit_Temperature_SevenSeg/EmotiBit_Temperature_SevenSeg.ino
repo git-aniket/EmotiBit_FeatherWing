@@ -55,11 +55,22 @@ void loop()
 	if (dataAvailable > 0)
 	{
 		// Print temperature on the 7 segment display!
-		if (dataAvailable > 0)
+		static float smoothData = -1;
+		float smoother = 0.97f;
+		for (size_t i = 0; i < dataAvailable && i < dataSize; i++)
 		{
-			matrix.print(data[dataAvailable - 1]);
-			matrix.writeDisplay();
+			if (smoothData < 0)
+			{
+				// handle initial condition
+				smoothData = data[i];
+			}
+			else
+			{
+				smoothData = smoothData * smoother + data[i] * (1 - smoother);
+			}
 		}
+		matrix.print(smoothData);
+		matrix.writeDisplay();
 
 		// print the data to view in the serial plotter
 		bool printData = false;
