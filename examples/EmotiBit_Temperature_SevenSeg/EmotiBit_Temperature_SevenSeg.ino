@@ -56,10 +56,10 @@ void loop()
 	{
 		// Print temperature on the 7 segment display!
 		static float smoothData = -1;
-		float smoother = 0.97f;
+		float smoother = 0.95f;
 		for (size_t i = 0; i < dataAvailable && i < dataSize; i++)
 		{
-			if (smoothData < 0)
+			if (smoothData < 0 )
 			{
 				// handle initial condition
 				smoothData = data[i];
