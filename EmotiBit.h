@@ -8,6 +8,7 @@
 #include <EmotiBit_Si7013.h>
 #include <BMI160Gen.h>
 #include <MAX30105.h>
+#include "spo2_algorithm.h"
 #include <EmotiBit_NCP5623.h>
 #include <SparkFun_MLX90632_Arduino_Library.h>
 #include "DoubleBufferFloat.h"
@@ -161,6 +162,7 @@ public:
 		MAGNETOMETER_X,
 		MAGNETOMETER_Y,
 		MAGNETOMETER_Z,
+		SPO2,
 		BATTERY_VOLTAGE,
 		BATTERY_PERCENT,
 		DEBUG,
@@ -412,6 +414,7 @@ public:
 	void sendModePacket(String &sentModePacket, uint16_t &packetNumber);
 	void processDebugInputs(String &debugPackets, uint16_t &packetNumber);
 	String getHardwareVersion();
+	void calculateSpO2();
 
 	// ----------- END ino refactoring ---------------
 
@@ -497,6 +500,7 @@ private:
 	DoubleBufferFloat dataOverflow	 = DoubleBufferFloat(MAX_DATA_BUFFER_SIZE);
 	DoubleBufferFloat dataClipping   = DoubleBufferFloat(MAX_DATA_BUFFER_SIZE);
 	DoubleBufferFloat debugBuffer    = DoubleBufferFloat(MAX_DATA_BUFFER_SIZE);
+	DoubleBufferFloat spo2 = DoubleBufferFloat(1);
 
 	DoubleBufferFloat * dataDoubleBuffers[(uint8_t)DataType::length];
 
@@ -510,6 +514,13 @@ private:
 	BufferFloat humidityBuffer = BufferFloat(4);
 	BufferFloat batteryVoltageBuffer = BufferFloat(8);
 	BufferFloat batteryPercentBuffer = BufferFloat(8);
+
+	// Calculation Buffers
+	// Single buffered arrays must only be accessed from main loop functions, not in the ISR
+	//const int SPO2_BUFFER_SIZE = 32;
+	//BufferFloat spo2IrBuffer = BufferFloat(SPO2_BUFFER_SIZE);
+	//BufferFloat spo2RedBuffer = BufferFloat(SPO2_BUFFER_SIZE);
+	
 
 	const uint8_t SCOPE_TEST_PIN = A0;
 	bool scopeTestPinOn = false;

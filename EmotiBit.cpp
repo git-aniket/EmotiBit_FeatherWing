@@ -136,6 +136,7 @@ uint8_t EmotiBit::setup(Version version, size_t bufferCapacity)
 	dataDoubleBuffers[(uint8_t)EmotiBit::DataType::PPG_INFRARED] = &ppgInfrared;
 	dataDoubleBuffers[(uint8_t)EmotiBit::DataType::PPG_RED] = &ppgRed;
 	dataDoubleBuffers[(uint8_t)EmotiBit::DataType::PPG_GREEN] = &ppgGreen;
+	dataDoubleBuffers[(uint8_t)EmotiBit::DataType::SPO2] = &spo2;
 	dataDoubleBuffers[(uint8_t)EmotiBit::DataType::TEMPERATURE_0] = &temp0;
 	dataDoubleBuffers[(uint8_t)EmotiBit::DataType::THERMOPILE] = &therm0;
 	dataDoubleBuffers[(uint8_t)EmotiBit::DataType::HUMIDITY_0] = &humidity0;
@@ -558,6 +559,7 @@ uint8_t EmotiBit::setup(Version version, size_t bufferCapacity)
 	typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_X] = EmotiBitPacket::TypeTag::MAGNETOMETER_X;
 	typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Y] = EmotiBitPacket::TypeTag::MAGNETOMETER_Y;
 	typeTags[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = EmotiBitPacket::TypeTag::MAGNETOMETER_Z;
+	typeTags[(uint8_t)EmotiBit::DataType::SPO2] = EmotiBitPacket::TypeTag::SPO2;
 	typeTags[(uint8_t)EmotiBit::DataType::BATTERY_VOLTAGE] = EmotiBitPacket::TypeTag::BATTERY_VOLTAGE;
 	typeTags[(uint8_t)EmotiBit::DataType::BATTERY_PERCENT] = EmotiBitPacket::TypeTag::BATTERY_PERCENT;
 	typeTags[(uint8_t)EmotiBit::DataType::DATA_CLIPPING] = EmotiBitPacket::TypeTag::DATA_CLIPPING;
@@ -582,6 +584,7 @@ uint8_t EmotiBit::setup(Version version, size_t bufferCapacity)
 	printLen[(uint8_t)EmotiBit::DataType::MAGNETOMETER_X] = 0;
 	printLen[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Y] = 0;
 	printLen[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = 0;
+	printLen[(uint8_t)EmotiBit::DataType::SPO2] = 0;
 	printLen[(uint8_t)EmotiBit::DataType::BATTERY_VOLTAGE] = 2;
 	printLen[(uint8_t)EmotiBit::DataType::BATTERY_PERCENT] = 0;
 	printLen[(uint8_t)EmotiBit::DataType::DEBUG] = 0;
@@ -604,6 +607,7 @@ uint8_t EmotiBit::setup(Version version, size_t bufferCapacity)
 	sendData[(uint8_t)EmotiBit::DataType::MAGNETOMETER_X] = true;
 	sendData[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Y] = true;
 	sendData[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = true;
+	sendData[(uint8_t)EmotiBit::DataType::SPO2] = true;
 	sendData[(uint8_t)EmotiBit::DataType::BATTERY_VOLTAGE] = true;
 	sendData[(uint8_t)EmotiBit::DataType::BATTERY_PERCENT] = true;
 	sendData[(uint8_t)EmotiBit::DataType::DATA_CLIPPING] = true;
@@ -628,6 +632,7 @@ uint8_t EmotiBit::setup(Version version, size_t bufferCapacity)
 	_newDataAvailable[(uint8_t)EmotiBit::DataType::MAGNETOMETER_X] = false;
 	_newDataAvailable[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Y] = false;
 	_newDataAvailable[(uint8_t)EmotiBit::DataType::MAGNETOMETER_Z] = false;
+	_newDataAvailable[(uint8_t)EmotiBit::DataType::SPO2] = false;
 	_newDataAvailable[(uint8_t)EmotiBit::DataType::BATTERY_VOLTAGE] = false;
 	_newDataAvailable[(uint8_t)EmotiBit::DataType::BATTERY_PERCENT] = false;
 	_newDataAvailable[(uint8_t)EmotiBit::DataType::DATA_CLIPPING] = false;
@@ -983,6 +988,7 @@ uint8_t EmotiBit::update()
 			for (int16_t i = 0; i < (uint8_t)EmotiBit::DataType::length; i++)
 			{
 				addPacket((EmotiBit::DataType) i);
+				calculateSpO2();
 				if (_outDataPackets.length() > OUT_MESSAGE_RESERVE_SIZE - OUT_PACKET_MAX_SIZE)
 				{
 					// Avoid overrunning our reserve memory
@@ -1657,6 +1663,11 @@ size_t EmotiBit::getData(DataType type, float** data, uint32_t * timestamp) {
 		{
 			return getDataThermopile(data, timestamp);
 		}
+		//else if ((uint8_t)type == (uint8_t)EmotiBit::DataType::SPO2)
+		//{
+		//	data = &spo2.data;
+		//	return spo2.size();
+		//}
 		else
 		{
 			return dataDoubleBuffers[(uint8_t)type]->getData(data, timestamp);
@@ -3118,4 +3129,61 @@ void ReadSensors()
 		myEmotiBit->readSensors();
 
 	}
+}
+
+void EmotiBit::calculateSpO2()
+{
+	//uint32_t timestamp;
+	//float * redData;
+	//float * irData;
+	//const size_t dataSize = 8;
+	//size_t bufferLength;
+
+	//size_t redAvailable = readData(EmotiBit::DataType::PPG_RED, &redData, timestamp);
+	//size_t irAvailable = readData(EmotiBit::DataType::PPG_INFRARED, &irData, timestamp);
+	//bufferLength = min(redAvailable, irAvailable);
+	//bufferLength = min(bufferLength, dataSize);
+	//// ToDo: handle case where timestamps are incongruous
+
+	//static uint32_t irData32[dataSize];
+	//static uint32_t redData32[dataSize];
+	//for (size_t i = 0; i < bufferLength; i++)
+	//{
+	//	irData32[i] = irData[i];
+	//	redData32[i] = redData[i];
+	//}
+
+	//int32_t tempSpo2; //SPO2 value
+	//int8_t validSPO2; //indicator to show if the SPO2 calculation is valid
+	//int32_t heartRate; //heart rate value
+	//int8_t validHeartRate; //indicator to show if the heart rate calculation is valid
+
+	////calculate heart rate and SpO2 after first 100 samples (first 4 seconds of samples)
+	//maxim_heart_rate_and_oxygen_saturation(irData32, bufferLength, redData32, &tempSpo2, &validSPO2, &heartRate, &validHeartRate);
+
+	//Serial.print(validSPO2);
+	float * irData;
+	uint32_t timestamp;
+	size_t irAvailable = readData(EmotiBit::DataType::PPG_INFRARED, &irData, timestamp);
+
+
+	if (false) {
+	//if (validSPO2) {
+		// ToDo: Add some smoothing
+		//spo2.push_back(tempSpo2, &timestamp);
+	}
+	else
+	{
+		// Create dummy data
+		if (irAvailable > 0 && irData[0] > 10000)
+		{
+			spo2.push_back(97.f, &timestamp);
+		}
+		else
+		{
+			spo2.push_back(97.f, &timestamp);
+		}
+	}
+
+
 }
