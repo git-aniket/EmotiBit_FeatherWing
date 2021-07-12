@@ -1,5 +1,6 @@
 #include "EmotiBitWiFi.h"
 #include <driver/source/nmasic.h>
+#include "RoundTripExaminer.h"
 
 uint8_t EmotiBitWiFi::begin(uint16_t timeout, uint16_t attemptDelay)
 {
@@ -519,6 +520,27 @@ int8_t EmotiBitWiFi::processTimeSync(String &syncPackets, uint16_t &syncPacketCo
 	// ToDo: Consider whether time syncing should be performed on the advertising channel
 	if (_isConnected)
 	{
+		RoundTripExaminer RTE;
+
+		String syncMessage;
+		EmotiBitPacket::Header header;
+		int8_t status;
+		int16_t dataStartChar;
+
+		//makes sure no old messages are in the read buffer
+		status = readUdp(_dataCxn, syncMessage);
+		while (status == SUCCESS) {
+			dataStartChar = EmotiBitPacket::getHeader(syncMessage, header);
+			syncPackets += EmotiBitPacket::createPacket(header.typeTag, syncPacketCounter++,
+				syncMessage.substring(dataStartChar, syncMessage.length() - 1), header.dataLength);
+			status = readUdp(_dataCxn, syncMessage);
+		}
+		
+		//start of "Total Time"
+		float wholeTime = RTE.startTimerTotalTime();
+		//start of "Send Request Data Time"
+		float sendRequestTime = RTE.startTimer();
+
 		int16_t rdPacketNumber = syncPacketCounter;
 
 		String payload;
@@ -531,15 +553,24 @@ int8_t EmotiBitWiFi::processTimeSync(String &syncPackets, uint16_t &syncPacketCo
 		if (DEBUG_PRINT) Serial.print(packet);
 		syncPackets += packet;
 
-		uint32_t syncWaitTimer = millis();
+		//end of "Send Request Data Time"
+		RTE.recordTimer(RTE.SEND_READ_DATA_TIME_POSITION, sendRequestTime);
 
-		String syncMessage;
-		EmotiBitPacket::Header header;
-		int8_t status;
-		int16_t dataStartChar;
+
+		//start of "Total readUDP Time" and "Total loop Time"
+		float loopTime = RTE.startTimerReceiveACK();
+
+		uint32_t syncWaitTimer = millis();
 		while (millis() - syncWaitTimer < MAX_SYNC_WAIT_INTERVAL)
 		{
+			//start of "readUDP Attempt X Time"
+			float readUDPTime = RTE.startTimer();
+
 			status = readUdp(_dataCxn, syncMessage);
+			
+			//end of "readUDP Attempt X Time"
+			RTE.recordTimer(RTE.READUDP_TIME_POSITION, readUDPTime);
+
 			// NOTE: Currently only one packet per message (datagram) is processed
 			// ToDo: Parse delimiters to split up multi-packet messages
 			if (status == SUCCESS)
@@ -563,11 +594,26 @@ int8_t EmotiBitWiFi::processTimeSync(String &syncPackets, uint16_t &syncPacketCo
 					}
 					else if (header.typeTag.equals(EmotiBitPacket::TypeTag::ACK))
 					{
+						//end of "Total readUDP Time"
+						RTE.recordTimer(RTE.TOTAL_READUDP_TIME_POSITION, loopTime);
+						//start of "Create Packet Time"
+						float packetTime = RTE.startTimer();
+
 						syncPackets += EmotiBitPacket::createPacket(header.typeTag, syncPacketCounter++,
 							syncMessage.substring(dataStartChar, syncMessage.length() - 1), header.dataLength);
 						String ackPacketNumber;
 						EmotiBitPacket::getPacketElement(syncMessage, ackPacketNumber, dataStartChar);
 						if (rdPacketNumber == ackPacketNumber.toInt()) {
+							
+							//end of "Create Packet Time"
+							RTE.recordTimer(RTE.CREATE_PACKET_TIME_POSITION, packetTime);
+							//end of "Total loop Time"
+							RTE.recordTimer(RTE.RECEIVE_ACK_TIME_POSITION, loopTime);
+							//end of "Total Time"
+							RTE.recordTimer(RTE.TOTAL_TIME_POSITION, wholeTime);
+							//print collected data
+							RTE.printTrip();
+
 							return SUCCESS;
 						}
 					}
