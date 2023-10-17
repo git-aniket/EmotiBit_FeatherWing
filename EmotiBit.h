@@ -136,7 +136,7 @@ public:
 #if defined(EMOTIBIT_PPG_100HZ)
 	struct PPGSettings {
 		uint8_t ledPowerLevel = 0x2F; //Options: 0=Off to 255=50mA
-		uint16_t sampleAverage = 8;   //Options: 1, 2, 4, 8, 16, 32
+		uint16_t sampleAverage = 1;   //Options: 1, 2, 4, 8, 16, 32
 		uint8_t ledMode = 3;          //Options: 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green
 		uint16_t sampleRate = 800;    //Options: 50, 100, 200, 400, 800, 1000, 1600, 3200
 		uint16_t pulseWidth = 118;     //Options: 69, 118, 215, 411
@@ -321,7 +321,7 @@ public:
 #define BASE_SAMPLING_FREQ 150
 #define LED_REFRESH_DIV 10
 #define EDA_SAMPLING_DIV 2
-#define PPG_SAMPLING_DIV 2
+#define PPG_SAMPLING_DIV 1
 #define TEMPERATURE_1_SAMPLING_DIV 20
 #define TEMPERATURE_0_SAMPLING_DIV 10
 #define THERMOPILE_SAMPLING_DIV 20 	// TODO: This should change according to the rate set on the thermopile begin function 
@@ -601,7 +601,7 @@ private:
 #if !defined(EMOTIBIT_PPG_100HZ) && !defined(ARDUINO_FEATHER_ESP32)
 	// 2.4 seconds data buffering
 	const uint16_t EDA_BUFFER_SIZE = 36;
-	const uint16_t PPG_BUFFER_SIZE = 60;
+	const uint16_t PPG_BUFFER_SIZE = 120;
 	const uint16_t TEMP_BUFFER_SIZE = 18;
 	const uint16_t IMU_BUFFER_SIZE = 9;
 #endif
