@@ -137,7 +137,7 @@ public:
 	struct PPGSettings {
 		uint8_t ledPowerLevel = 0x2F; //Options: 0=Off to 255=50mA
 		uint16_t sampleAverage = 1;   //Options: 1, 2, 4, 8, 16, 32
-		uint8_t ledMode = 3;          //Options: 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green
+		uint8_t ledMode = 2;          //Options: 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green
 		uint16_t sampleRate = 800;    //Options: 50, 100, 200, 400, 800, 1000, 1600, 3200
 		uint16_t pulseWidth = 118;     //Options: 69, 118, 215, 411
 		uint16_t adcRange = 4096;     //Options: 2048, 4096, 8192, 16384
@@ -364,16 +364,16 @@ public:
 	//} timerLoopOffset;	// Sets initial value of sampling counters
 
 	struct AcquireData {
-		bool eda = true;
-		bool tempHumidity = true;
-		bool thermopile = true;
+		bool eda = false;
+		bool tempHumidity = false;
+		bool thermopile = false;
 		bool imu = true;
 		bool ppg = true;
-		bool tempPpg = true;
+		bool tempPpg = false;
 		bool debug = false;
-		bool battery = true;
-		bool heartRate = true; // Note: we may want to move this to a separarte flag someday, for controlling derivative signals
-		bool edrMetrics = true;
+		bool battery = false;
+		bool heartRate = false; // Note: we may want to move this to a separarte flag someday, for controlling derivative signals
+		bool edrMetrics = false;
 	} acquireData;
 
 	struct ChipBegun {
