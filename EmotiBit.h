@@ -147,7 +147,7 @@ public:
 	{
 		uint8_t ledPowerLevel = 0x2F; // Options: 0=Off to 255=50mA
 		uint16_t sampleAverage = 1;	  // Options: 1, 2, 4, 8, 16, 32
-		uint8_t ledMode = 3;		  // Options: 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green
+		uint8_t ledMode = 2;		  // Options: 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green
 		uint16_t sampleRate = 1000;	  // Options: 50, 100, 200, 400, 800, 1000, 1600, 3200
 		uint16_t pulseWidth = 118;	  // Options: 69, 118, 215, 411
 		uint16_t adcRange = 4096;	  // Options: 2048, 4096, 8192, 16384
@@ -347,16 +347,16 @@ public:
 	 * So, net, the sampling rate of the data channel is BASE_SAMPLING_FREQ/{DATATYPE}_SAMPLING_DIV/SamplesAveraged.{DATATYPE}
 	 */
 	// ToDo: Make sampling variables changeable
-#define BASE_SAMPLING_FREQ 150*SAMPLING_FREQ_SCALER
-#define LED_REFRESH_DIV 10*SAMPLING_FREQ_SCALER
-#define EDA_SAMPLING_DIV 2*SAMPLING_FREQ_SCALER
-#define PPG_SAMPLING_DIV 9  // 9000/9 gives 1000Hz
-#define TEMPERATURE_1_SAMPLING_DIV 20*SAMPLING_FREQ_SCALER
-#define TEMPERATURE_0_SAMPLING_DIV 10*SAMPLING_FREQ_SCALER
-#define THERMOPILE_SAMPLING_DIV 20*SAMPLING_FREQ_SCALER // TODO: This should change according to the rate set on the thermopile begin function
-#define IMU_SAMPLING_DIV 2*SAMPLING_FREQ_SCALER
-#define BATTERY_SAMPLING_DIV 50*SAMPLING_FREQ_SCALER
-#define DUMMY_ISR_DIV 10*SAMPLING_FREQ_SCALER
+#define BASE_SAMPLING_FREQ 150 //*SAMPLING_FREQ_SCALER
+#define LED_REFRESH_DIV 10 //*SAMPLING_FREQ_SCALER
+#define EDA_SAMPLING_DIV 2 //*SAMPLING_FREQ_SCALER
+#define PPG_SAMPLING_DIV 9 // 9000/9 gives 1000Hz
+#define TEMPERATURE_1_SAMPLING_DIV 20 //*SAMPLING_FREQ_SCALER
+#define TEMPERATURE_0_SAMPLING_DIV 10 //*SAMPLING_FREQ_SCALER
+#define THERMOPILE_SAMPLING_DIV 20 //*SAMPLING_FREQ_SCALER // TODO: This should change according to the rate set on the thermopile begin function
+#define IMU_SAMPLING_DIV 2 //*SAMPLING_FREQ_SCALER
+#define BATTERY_SAMPLING_DIV 50 //*SAMPLING_FREQ_SCALER
+#define DUMMY_ISR_DIV 10 //*SAMPLING_FREQ_SCALER
 
 	struct TimerLoopOffset
 	{
@@ -393,16 +393,16 @@ public:
 
 	struct AcquireData
 	{
-		bool eda = true;
-		bool tempHumidity = true;
-		bool thermopile = true;
+		bool eda = false;
+		bool tempHumidity = false;
+		bool thermopile = false;
 		bool imu = true;
 		bool ppg = true;
-		bool tempPpg = true;
+		bool tempPpg = false;
 		bool debug = false;
 		bool battery = true;
-		bool heartRate = true; // Note: we may want to move this to a separarte flag someday, for controlling derivative signals
-		bool edrMetrics = true;
+		bool heartRate = false; // Note: we may want to move this to a separarte flag someday, for controlling derivative signals
+		bool edrMetrics = false;
 	} acquireData;
 
 	struct ChipBegun
@@ -630,7 +630,7 @@ private:
 	// since PPG rate has been increased by 10 times, its buffer size
 	// has been increased proportionately
 	const uint16_t EDA_BUFFER_SIZE = 36;
-	const uint16_t PPG_BUFFER_SIZE = 600;
+	const uint16_t PPG_BUFFER_SIZE = 120;
 	const uint16_t TEMP_BUFFER_SIZE = 18;
 	const uint16_t IMU_BUFFER_SIZE = 9;
 #endif
