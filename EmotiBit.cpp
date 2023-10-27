@@ -476,7 +476,7 @@ uint8_t EmotiBit::setup(String firmwareVariant) {
   // vRef1 = emotiBitVersionController.getMathConstant(MathConstants::VREF1);
   // vRef2 = emotiBitVersionController.getMathConstant(MathConstants::VREF2);
   //_edaSeriesResistance =
-  //emotiBitVersionController.getMathConstant(MathConstants::EDA_SERIES_RESISTOR);
+  // emotiBitVersionController.getMathConstant(MathConstants::EDA_SERIES_RESISTOR);
 
   if (!_outDataPackets.reserve(OUT_MESSAGE_RESERVE_SIZE)) {
     Serial.println("Failed to reserve memory for output");
@@ -1848,11 +1848,14 @@ int8_t EmotiBit::updateTempHumidityData() {
     //	thermistorBuffer.push_back(thermTemp);
     //	if (thermistorBuffer.size() >= _samplesAveraged.thermistor) {
     //		// ToDo: Convert  to degrees
-    //		//thermTemp = thermTemp * _vcc / _thermistorAdcResolution;	// Convert
-    //ADC to Volts
-    //		//thermTemp = (thermTemp - vGnd) / thermistorAmplification;	// Remove
-    //VGND bias and amplification from thermistor measurement
-    //		//thermTemp = thermTemp / (1 - thermTemp) / thermistorToDividerRatio;
+    //		//thermTemp = thermTemp * _vcc / _thermistorAdcResolution;	//
+    //Convert
+    // ADC to Volts
+    //		//thermTemp = (thermTemp - vGnd) / thermistorAmplification;	//
+    //Remove
+    // VGND bias and amplification from thermistor measurement
+    //		//thermTemp = thermTemp / (1 - thermTemp) /
+    //thermistorToDividerRatio;
     //// Convert Volts to Ohms
     //		// rDivVal
     //		// rThermVal
@@ -1871,7 +1874,7 @@ int8_t EmotiBit::updateTempHumidityData() {
     //		// 30C = 8.31kOhm
     //		// Amplification 10x
     //		status = status | pushData(EmotiBit::DataType::TEMPERATURE_HP0,
-    //average(thermistorBuffer), &(thermistorBuffer.timestamp));
+    // average(thermistorBuffer), &(thermistorBuffer.timestamp));
     //		thermistorBuffer.clear();
     //	}
     //	tempHumiditySensor.startHumidityTempMeasurement();
@@ -2281,7 +2284,7 @@ int8_t EmotiBit::pushData(EmotiBit::DataType type, float data,
     // else if (status & BufferFloat::PUSH_WHILE_GETTING ==
     // BufferFloat::PUSH_WHILE_GETTING) {
     //	dataDoubleBuffers[(uint8_t)EmotiBit::DataType::PUSH_WHILE_GETTING]->push_back((uint8_t)type,
-    //timestamp); 	return (int8_t)EmotiBit::Error::NONE;
+    // timestamp); 	return (int8_t)EmotiBit::Error::NONE;
     // }
     else {
       return (int8_t)EmotiBit::Error::NONE;
@@ -3643,7 +3646,6 @@ bool EmotiBit::writeSdCardMessage(const String &s) {
         _dataFile.sync(); // ToDo: Consider using flush() for all MCUs
 #endif
       }
-
     } else {
       Serial.print("Data file didn't open properly: ");
       Serial.println(_sdCardFilename);
@@ -4433,7 +4435,6 @@ void ReadSensors(void *pvParameters) {
   {
     if (myEmotiBit != nullptr) {
       myEmotiBit->readSensors();
-
     } else {
       Serial.println("EmotiBit is nullptr");
     }

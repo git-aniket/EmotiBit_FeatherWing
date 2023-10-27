@@ -403,9 +403,9 @@ public:
   String _outDataPackets; // Packets that will be sent over wireless (if
                           // enabled) and written to SD card (if recording)
   uint16_t _outDataPacketCounter = 0;
-  // String _outSdPackets;		// Packts that will be written to SD card (if
-  // recording) but not sent over wireless String _inControlPackets;	//
-  // Control packets recieved over wireless
+  // String _outSdPackets;		// Packts that will be written to SD card
+  // (if recording) but not sent over wireless String _inControlPackets;
+  // // Control packets recieved over wireless
   String _sdCardFilename = "datalog.csv";
 #if defined ARDUINO_FEATHER_ESP32
   const char *_configFilename = "/config.txt";
